@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinela — run {{ run_id }}</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --fail: #f85149;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { margin: 0 0 .35rem; font-size: 1.8rem; }
+  h2 { margin: 2rem 0 .75rem; font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+  .muted { color: var(--muted); }
+  .badge {
+    display: inline-block; padding: .2rem .65rem; border-radius: 999px;
+    border: 1px solid var(--border); font-weight: 600; letter-spacing: .02em;
+  }
+  .status-ok { color: var(--ok); border-color: var(--ok); }
+  .status-tests_failed { color: var(--warn); border-color: var(--warn); }
+  .status-restore_failed, .status-infra_error { color: var(--fail); border-color: var(--fail); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; }
+  .card .label { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+  .card .value { margin-top: .25rem; word-break: break-word; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: 0; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; }
+  .hash { word-break: break-all; }
+  .pass { color: var(--ok); }
+  .fail { color: var(--warn); }
+  .error { color: var(--fail); }
+  pre { white-space: pre-wrap; word-break: break-word; background: #010409; border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
+  .footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sentinela — evidência de restauração</h1>
+  <p class="muted">
+    Run <span class="mono">{{ run_id }}</span> · ambiente <strong>{{ environment }}</strong> ·
+    <span class="badge status-{{ status }}">{{ status }}</span>
+    · exit code {{ exit_code }}
+  </p>
+
+  <h2>Resumo</h2>
+  <div class="grid">
+    <div class="card"><div class="label">Início</div><div class="value mono">{{ started_at }}</div></div>
+    <div class="card"><div class="label">Fim</div><div class="value mono">{{ finished_at }}</div></div>
+    <div class="card"><div class="label">Testes</div><div class="value">{{ summary_passed }}/{{ summary_total }} passaram ({{ summary_failed }} falhas, {{ summary_errors }} erros)</div></div>
+    <div class="card"><div class="label">Duração total</div><div class="value">{{ total_ms }} ms</div></div>
+  </div>
+
+  <h2>Backup</h2>
+  <div class="grid">
+    <div class="card"><div class="label">ID</div><div class="value mono">{{ backup_id }}</div></div>
+    <div class="card"><div class="label">Provider</div><div class="value">{{ backup_provider }}</div></div>
+    <div class="card"><div class="label">Tamanho</div><div class="value">{{ backup_size }}</div></div>
+    <div class="card"><div class="label">Modificado</div><div class="value mono">{{ backup_modified }}</div></div>
+    <div class="card"><div class="label">pg_restore --list (host)</div><div class="value">{{ host_restore_list }}</div></div>
+    <div class="card"><div class="label">pg_restore --list (container)</div><div class="value">{{ restore_list_ok }}</div></div>
+  </div>
+  <p class="muted">Caminho: <span class="mono">{{ backup_path }}</span></p>
+  <p class="muted hash">SHA-256 do backup: <span class="mono">{{ backup_sha256 }}</span></p>
+
+  <h2>Restauração</h2>
+  {% if has_restore %}
+  <div class="grid">
+    <div class="card"><div class="label">Exit code</div><div class="value">{{ restore_exit }}</div></div>
+    <div class="card"><div class="label">Duração</div><div class="value">{{ restore_duration }}</div></div>
+    <div class="card"><div class="label">pg_restore --list</div><div class="value">{{ restore_list }}</div></div>
+  </div>
+  {% else %}
+  <p class="muted">A restauração não chegou a ser executada.</p>
+  {% endif %}
+
+  <h2>Testes SQL</h2>
+  {% if tests.len() > 0 %}
+  <table>
+    <thead><tr><th>Teste</th><th>Status</th><th>Valor</th><th>Duração</th><th>Mensagem</th></tr></thead>
+    <tbody>
+    {% for test in tests %}
+      <tr>
+        <td class="mono">{{ test.name }}</td>
+        <td class="{% if test.status == "passed" %}pass{% else %}fail{% endif %}">{{ test.status }}</td>
+        <td class="mono">{{ test.value }}</td>
+        <td>{{ test.duration_ms }} ms</td>
+        <td>{% if test.message != "" %}{{ test.message }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nenhum teste SQL foi executado.</p>
+  {% endif %}
+
+  <h2>Tempos</h2>
+  <table>
+    <thead><tr><th>Fase</th><th>Duração</th></tr></thead>
+    <tbody>
+      <tr><td>Descoberta e SHA-256</td><td>{{ discovery_ms }} ms</td></tr>
+      <tr><td>Subida, rede e readiness</td><td>{{ startup_ms }} ms</td></tr>
+      <tr><td>Validação e restauração</td><td>{{ restore_ms }} ms</td></tr>
+      <tr><td>Testes SQL</td><td>{{ tests_ms }} ms</td></tr>
+      <tr><td>Total</td><td>{{ total_ms }} ms</td></tr>
+    </tbody>
+  </table>
+
+  {% if has_error %}
+  <h2>Erro</h2>
+  <pre class="error">{{ error }}</pre>
+  {% endif %}
+
+  <h2>Integridade</h2>
+  <table>
+    <tbody>
+      <tr><th>SHA-256 do JSON</th><td class="mono hash">{{ sha256 }}</td></tr>
+      <tr><th>Assinatura Ed25519 (base64)</th><td class="mono hash">{{ signature }}</td></tr>
+      <tr><th>Chave pública (base64)</th><td class="mono hash">{{ public_key }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">
+    Verifique com <code>sentinela report show {{ run_id }}</code>. Nenhum dado saiu desta máquina.
+  </p>
+
+  <div class="footer">Gerado por Sentinela 0.1 em {{ generated_at }}.</div>
+</main>
+</body>
+</html>

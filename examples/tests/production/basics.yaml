@@ -1,0 +1,26 @@
+# Cada teste executa UMA consulta que retorna um único escalar
+# (booleano ou numérico). A consulta roda dentro de uma transação que é
+# sempre revertida ao final.
+#
+# O relatório guarda apenas o status, o valor escalar e a duração.
+# Nenhuma linha de dados do cliente é copiada para o relatório.
+
+tests:
+  - name: users_exist
+    sql: SELECT count(*) FROM users
+    expect: { op: gte, value: 1 }
+
+  - name: users_have_email
+    sql: SELECT bool_and(email IS NOT NULL) FROM users
+    expect: { op: is_true }
+
+  - name: emails_are_unique
+    sql: SELECT count(DISTINCT email) = count(*) FROM users
+    expect: { op: is_true }
+
+  - name: latest_order_is_recent
+    sql: |
+      SELECT count(*) FROM orders
+      WHERE created_at > now() - interval '30 days'
+    expect: { op: gt, value: 0 }
+    timeout_ms: 2000

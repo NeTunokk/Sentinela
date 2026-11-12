@@ -1,0 +1,19 @@
+[package]
+name = "sentinela-runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Sandbox Docker, restauração e testes SQL do Sentinela"
+
+[dependencies]
+sentinela-core = { path = "../sentinela-core" }
+base64.workspace = true
+bollard.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true
+tracing.workspace = true

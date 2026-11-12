@@ -1,0 +1,27 @@
+# Exemplo de ambiente.
+# Copie para ~/.config/sentinela/envs/production.yaml (ou use `sentinela env add`).
+name: production
+
+backup:
+  provider: logical
+  # Caminhos relativos são resolvidos a partir do diretório deste arquivo.
+  # Use um caminho absoluto para apontar para o diretório real de backups.
+  directory: /var/backups/postgres
+  glob: "*.dump"
+
+postgres:
+  version: "16"
+  image: postgres
+  user: postgres
+  database: sentinela
+
+docker:
+  memory_mb: 512
+  cpus: 1.0
+  readiness_timeout_secs: 60
+  restore_timeout_secs: 600
+  data_tmpfs_mb: 1024
+
+tests:
+  directory: ../tests/production
+  statement_timeout_ms: 5000

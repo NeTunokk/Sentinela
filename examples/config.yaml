@@ -1,0 +1,11 @@
+# Defaults globais usados por `sentinela env add`.
+# Copie para ~/.config/sentinela/config.yaml (ou para SENTINELA_CONFIG_DIR).
+defaults:
+  postgres_version: "16"
+  postgres_image: postgres
+  postgres_user: postgres
+  database: sentinela
+  memory_mb: 512
+  cpus: 1.0
+  readiness_timeout_secs: 60
+  restore_timeout_secs: 600
