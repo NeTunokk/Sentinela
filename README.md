@@ -53,19 +53,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## Demo automatizado
-
-Para testar o fluxo completo sem configurar nada manualmente:
-
-```bash
-./teste/rodar-demo.sh
-```
-
-O script cria um dump de exemplo, configura um ambiente isolado em
-`teste/.work/`, executa o restore e os testes, e verifica o relatório assinado.
-Para ver uma falha de teste sendo detectada, use `./teste/rodar-demo.sh --falha`.
-Instruções detalhadas em [`teste/README.md`](teste/README.md).
-
 ## Início rápido
 
 1. Baixe a imagem que será usada no sandbox:
