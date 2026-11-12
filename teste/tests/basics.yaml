@@ -1,0 +1,8 @@
+tests:
+  - name: users_exist
+    sql: SELECT count(*) FROM users
+    expect: { op: gte, value: 2 }
+
+  - name: emails_are_unique
+    sql: SELECT count(DISTINCT email) = count(*) FROM users
+    expect: { op: is_true }

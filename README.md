@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Sentinela 0.1
 
 Sentinela prova localmente que um backup PostgreSQL é restaurável. Ele sobe um
@@ -53,6 +52,19 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+## Demo automatizado
+
+Para testar o fluxo completo sem configurar nada manualmente:
+
+```bash
+./teste/rodar-demo.sh
+```
+
+O script cria um dump de exemplo, configura um ambiente isolado em
+`teste/.work/`, executa o restore e os testes, e verifica o relatório assinado.
+Para ver uma falha de teste sendo detectada, use `./teste/rodar-demo.sh --falha`.
+Instruções detalhadas em [`teste/README.md`](teste/README.md).
 
 ## Início rápido
 
@@ -248,9 +260,10 @@ Para cada `run`, o Sentinela:
 - usa tmpfs para `/var/lib/postgresql/data`;
 - aplica limites de memória e CPU;
 - gera uma senha aleatória que nunca aparece em logs ou relatórios;
-- publica a porta 5432 **somente** em `127.0.0.1` para que o host execute os
-  testes via `tokio-postgres`;
-- aguarda `pg_isready` antes de restaurar;
+- deixa o host alcançar o IP do container na rede interna (sem publicar portas)
+  para executar os testes via `tokio-postgres`;
+- aguarda o banco aceitar consultas (`SELECT 1`) de forma estável antes de
+  restaurar;
 - remove container e rede em todos os caminhos (sucesso, falha, erro e
   SIGINT/SIGTERM), exceto com `--keep`.
 
@@ -355,8 +368,8 @@ sentinela report show <run_id>
 
 - Apenas dumps lógicos (`pg_dump -Fc`); PgBackRest é um stub.
 - A imagem do PostgreSQL precisa existir localmente.
-- A porta de teste é publicada em loopback; a rede do container continua
-  `internal`, sem saída para a internet.
+- Os testes conectam ao IP do container na rede `internal`; nenhuma porta é
+  publicada e o container continua sem saída para a internet.
 - O bind mount do backup não aceita caminhos com `:` no 0.1.
 - As ferramentas `pg_dump`/`pg_restore` usadas para gerar o dump de exemplo são
   as da imagem oficial do PostgreSQL; o Sentinela em si só exige
@@ -373,9 +386,3 @@ crates/
   sentinela-cli/      comandos, relatórios JSON/HTML e assinatura Ed25519
 examples/             config, ambiente e testes de exemplo
 ```
-=======
-# Sentinela
-####ALVARO TEST###
-Julio Test
-Alvaro test 
->>>>>>> 6241fffff09752321effbe566222e062f3674262

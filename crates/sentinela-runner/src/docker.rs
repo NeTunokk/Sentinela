@@ -6,7 +6,7 @@ use base64::Engine as _;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
-    ContainerCreateBody, ContainerInspectResponse, HostConfig, NetworkCreateRequest, PortBinding,
+    ContainerCreateBody, ContainerInspectResponse, HostConfig, NetworkCreateRequest,
 };
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
@@ -240,15 +240,6 @@ impl DockerSession {
             .clamp(1.0, i64::MAX as f64) as i64;
         let tmpfs_options = format!("rw,noexec,nosuid,size={}m", spec.data_tmpfs_mb.max(1));
 
-        let mut port_bindings = HashMap::new();
-        port_bindings.insert(
-            CONTAINER_PORT.to_string(),
-            Some(vec![PortBinding {
-                host_ip: Some("127.0.0.1".to_string()),
-                host_port: None,
-            }]),
-        );
-
         let host_config = HostConfig {
             network_mode: Some(self.network_name.clone()),
             binds: Some(vec![format!("{backup_path}:{CONTAINER_BACKUP_PATH}:ro")]),
@@ -258,7 +249,6 @@ impl DockerSession {
             )])),
             memory: Some(memory_bytes),
             nano_cpus: Some(nano_cpus),
-            port_bindings: Some(port_bindings),
             auto_remove: Some(false),
             ..HostConfig::default()
         };
@@ -272,7 +262,6 @@ impl DockerSession {
                 "PGTZ=UTC".to_string(),
                 "POSTGRES_INITDB_ARGS=--data-checksums".to_string(),
             ]),
-            exposed_ports: Some(vec![CONTAINER_PORT.to_string()]),
             labels: Some(labels),
             host_config: Some(host_config),
             ..ContainerCreateBody::default()
@@ -315,11 +304,13 @@ impl DockerSession {
         loop {
             attempts += 1;
             let command = [
-                "pg_isready".to_string(),
+                "psql".to_string(),
                 "-U".to_string(),
                 spec.postgres_user.clone(),
                 "-d".to_string(),
                 spec.database.clone(),
+                "-tAc".to_string(),
+                "SELECT 1".to_string(),
             ];
             match timeout(
                 Duration::from_secs(5),
@@ -327,15 +318,35 @@ impl DockerSession {
             )
             .await
             {
-                Ok(Ok(output)) if output.exit_code == Some(0) => return Ok(()),
+                Ok(Ok(output)) if output.exit_code == Some(0) => {
+                    sleep(Duration::from_millis(500)).await;
+                    match timeout(
+                        Duration::from_secs(5),
+                        self.exec_capture(&command, OutputLimits::NONE),
+                    )
+                    .await
+                    {
+                        Ok(Ok(second)) if second.exit_code == Some(0) => return Ok(()),
+                        Ok(Ok(second)) => {
+                            last_detail =
+                                format!("psql exit={:?} na confirmação", second.exit_code);
+                        }
+                        Ok(Err(error)) => {
+                            last_detail = error.to_string();
+                        }
+                        Err(_) => {
+                            last_detail = "timeout no psql de confirmação".to_string();
+                        }
+                    }
+                }
                 Ok(Ok(output)) => {
-                    last_detail = format!("pg_isready exit={:?}", output.exit_code);
+                    last_detail = format!("psql exit={:?}", output.exit_code);
                 }
                 Ok(Err(error)) => {
                     last_detail = error.to_string();
                 }
                 Err(_) => {
-                    last_detail = "timeout no pg_isready".to_string();
+                    last_detail = "timeout no psql".to_string();
                 }
             }
 
@@ -377,8 +388,8 @@ impl DockerSession {
         let outcomes = if tests.is_empty() {
             Vec::new()
         } else {
-            let port = self.host_port().await?;
-            run_sql_tests(spec, port, tests, statement_timeout_ms).await?
+            let address = self.container_address().await?;
+            run_sql_tests(spec, &address, tests, statement_timeout_ms).await?
         };
         let tests_duration_ms = millis(tests_started.elapsed());
 
@@ -484,7 +495,7 @@ impl DockerSession {
         }
     }
 
-    async fn host_port(&self) -> Result<u16> {
+    async fn container_address(&self) -> Result<String> {
         let inspect = self
             .docker
             .inspect_container(&self.container_name, None)
@@ -495,10 +506,10 @@ impl DockerSession {
                     self.container_name
                 ))
             })?;
-        extract_host_port(&inspect).ok_or_else(|| {
+        extract_container_ip(&inspect, &self.network_name).ok_or_else(|| {
             SentinelaError::Docker(format!(
-                "container '{}' não expôs a porta {} em 127.0.0.1",
-                self.container_name, CONTAINER_PORT
+                "container '{}' não recebeu um endereço na rede '{}' para a porta {}",
+                self.container_name, self.network_name, CONTAINER_PORT
             ))
         })
     }
@@ -649,16 +660,17 @@ impl Drop for DockerSession {
     }
 }
 
-fn extract_host_port(inspect: &ContainerInspectResponse) -> Option<u16> {
+fn extract_container_ip(inspect: &ContainerInspectResponse, network_name: &str) -> Option<String> {
     inspect
         .network_settings
         .as_ref()?
-        .ports
+        .networks
         .as_ref()?
-        .get(CONTAINER_PORT)?
-        .as_ref()?
-        .iter()
-        .find_map(|binding| binding.host_port.as_deref()?.parse::<u16>().ok())
+        .get(network_name)?
+        .ip_address
+        .as_deref()
+        .filter(|address| !address.is_empty())
+        .map(str::to_string)
 }
 
 fn append_bounded(output: &mut String, chunk: &[u8], limit: usize) {

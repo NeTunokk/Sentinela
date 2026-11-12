@@ -13,11 +13,11 @@ use crate::docker::SandboxSpec;
 /// própria que é sempre revertida, mesmo quando ele escreve.
 pub async fn run_sql_tests(
     spec: &SandboxSpec,
-    host_port: u16,
+    host: &str,
     tests: &[TestDefinition],
     default_timeout_ms: u64,
 ) -> Result<Vec<TestOutcome>> {
-    let mut client = connect(spec, host_port).await?;
+    let mut client = connect(spec, host).await?;
     let mut outcomes = Vec::with_capacity(tests.len());
     for test in tests {
         outcomes.push(run_one(&mut client, test, default_timeout_ms).await);
@@ -25,11 +25,11 @@ pub async fn run_sql_tests(
     Ok(outcomes)
 }
 
-async fn connect(spec: &SandboxSpec, host_port: u16) -> Result<Client> {
+async fn connect(spec: &SandboxSpec, host: &str) -> Result<Client> {
     let mut config = tokio_postgres::Config::new();
     config
-        .host("127.0.0.1")
-        .port(host_port)
+        .host(host)
+        .port(5432)
         .user(&spec.postgres_user)
         .password(spec.password())
         .dbname(&spec.database)
