@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Sentinela 0.1
 
 Sentinela prova localmente que um backup PostgreSQL é restaurável. Ele sobe um
@@ -372,3 +373,9 @@ crates/
   sentinela-cli/      comandos, relatórios JSON/HTML e assinatura Ed25519
 examples/             config, ambiente e testes de exemplo
 ```
+=======
+# Sentinela
+####ALVARO TEST###
+Julio Test
+Alvaro test 
+>>>>>>> 6241fffff09752321effbe566222e062f3674262
