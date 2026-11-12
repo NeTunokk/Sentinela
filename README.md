@@ -183,7 +183,8 @@ SENTINELA_DATA_DIR=/tmp/sentinela/data \
 sentinela env list
 ```
 
-Também são respeitados `XDG_CONFIG_HOME` e `XDG_DATA_HOME`.
+Também são respeitados `XDG_CONFIG_HOME` e `XDG_DATA_HOME`. No Windows, quando
+`HOME` não está definido, o `USERPROFILE` é usado como diretório base.
 
 ## Configuração de ambiente
 

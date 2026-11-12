@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,10 +16,18 @@ pub struct Paths {
 }
 
 impl Paths {
+    /// Descobre os diretórios padrão.
+    ///
+    /// Usa `HOME`; no Windows, recorre a `USERPROFILE` quando `HOME` não está
+    /// definido, porque o Windows não define `HOME` por padrão. Sem esse
+    /// fallback o executável não inicia em uma máquina de cliente.
     pub fn discover() -> Result<Self> {
-        let home = env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or_else(|| SentinelaError::Config("HOME não está definido".into()))?;
+        let home = home_dir().ok_or_else(|| {
+            SentinelaError::Config(
+                "nem HOME nem USERPROFILE estão definidos; não é possível localizar os diretórios do Sentinela"
+                    .into(),
+            )
+        })?;
 
         let config_dir = match env::var_os("SENTINELA_CONFIG_DIR") {
             Some(value) => PathBuf::from(value),
@@ -93,14 +102,35 @@ impl Paths {
     }
 }
 
+/// Diretório home do usuário.
+///
+/// `HOME` tem precedência. No Windows, `USERPROFILE` é usado como fallback
+/// porque o sistema não define `HOME` por padrão.
+fn home_dir() -> Option<PathBuf> {
+    let home = env::var_os("HOME");
+    #[cfg(windows)]
+    let userprofile = env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let userprofile = None;
+    resolve_home(home.as_deref(), userprofile.as_deref())
+}
+
+fn resolve_home(home: Option<&OsStr>, userprofile: Option<&OsStr>) -> Option<PathBuf> {
+    [home, userprofile]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Expande exclusivamente um `~` inicial. Não usa variáveis de ambiente.
 pub fn expand_tilde(value: &str) -> PathBuf {
     if value == "~" {
-        return env::var_os("HOME").map_or_else(|| PathBuf::from(value), PathBuf::from);
+        return home_dir().unwrap_or_else(|| PathBuf::from(value));
     }
     if let Some(rest) = value.strip_prefix("~/") {
-        if let Some(home) = env::var_os("HOME") {
-            return PathBuf::from(home).join(rest);
+        if let Some(home) = home_dir() {
+            return home.join(rest);
         }
     }
     PathBuf::from(value)
@@ -171,5 +201,26 @@ mod tests {
         let expanded = expand_tilde("~/backups");
         assert!(expanded.is_absolute());
         assert!(expanded.ends_with("backups"));
+    }
+
+    #[test]
+    fn falls_back_to_userprofile_when_home_is_missing() {
+        let userprofile = OsStr::new(r"C:\Users\cliente");
+
+        assert_eq!(
+            resolve_home(None, Some(userprofile)),
+            Some(PathBuf::from(userprofile))
+        );
+        assert_eq!(
+            resolve_home(Some(OsStr::new("")), Some(userprofile)),
+            Some(PathBuf::from(userprofile)),
+            "HOME vazio deve ser ignorado"
+        );
+        assert_eq!(
+            resolve_home(Some(OsStr::new("/home/maria")), Some(userprofile)),
+            Some(PathBuf::from("/home/maria")),
+            "HOME tem precedência sobre USERPROFILE"
+        );
+        assert_eq!(resolve_home(None, None), None);
     }
 }
