@@ -111,7 +111,7 @@ fn home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     let userprofile = env::var_os("USERPROFILE");
     #[cfg(not(windows))]
-    let userprofile = None;
+    let userprofile: Option<std::ffi::OsString> = None;
     resolve_home(home.as_deref(), userprofile.as_deref())
 }
 
