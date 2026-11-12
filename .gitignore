@@ -3,3 +3,10 @@
 *.db-shm
 *.db-wal
 /reports/
+
+# Estado local do Sentinela: nunca versionar (contém ambientes e chave de
+# assinatura). As regras são ancoradas na raiz para não afetar examples/.
+/envs/
+/keys/
+/config.yaml
+*.key
