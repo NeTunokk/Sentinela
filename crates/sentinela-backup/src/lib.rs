@@ -11,3 +11,4 @@ mod validate;
 pub use logical::LogicalDumpProvider;
 pub use pgbackrest::PgBackRestProvider;
 pub use provider::{provider_for, select_backup, BackupProvider};
+pub use validate::verify_unchanged;

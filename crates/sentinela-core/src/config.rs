@@ -53,6 +53,7 @@ fn default_statement_timeout_ms() -> u64 {
 pub enum ProviderKind {
     #[default]
     Logical,
+    #[serde(rename = "pgbackrest", alias = "pg_back_rest")]
     PgBackRest,
 }
 
@@ -502,6 +503,27 @@ tests:
         assert_eq!(config.postgres.docker_image(), "postgres:16");
         assert_eq!(config.tests.statement_timeout_ms, 2500);
         assert_eq!(config.docker.memory_mb, 512);
+    }
+
+    #[test]
+    fn round_trips_pgbackrest_provider_name() {
+        let yaml = "name: teste\nbackup:\n  provider: pgbackrest\n  directory: /var/backups\n";
+        let config: EnvironmentConfig = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.backup.provider, ProviderKind::PgBackRest);
+        assert_eq!(config.backup.provider.as_str(), "pgbackrest");
+
+        let serialized = serde_yaml_ng::to_string(&config).unwrap();
+        assert!(
+            serialized.contains("provider: pgbackrest"),
+            "provider deve serializar como 'pgbackrest': {serialized}"
+        );
+        assert!(
+            serde_yaml_ng::from_str::<EnvironmentConfig>(
+                "name: antigo\nbackup:\n  provider: pg_back_rest\n"
+            )
+            .is_ok(),
+            "nome antigo 'pg_back_rest' continua aceito"
+        );
     }
 
     #[test]

@@ -219,7 +219,7 @@ tests:
 O nome do backup é o nome do arquivo (por exemplo, `2026-11-11.dump`).
 
 > **PgBackRest:** `provider: pgbackrest` existe apenas como stub documentado no
-> 0.1 e falha imediatamente na descoberta, sem subir container.
+> 0.1 e falha na descoberta com erro de configuração, sem subir container.
 
 ## Formato dos testes SQL
 
@@ -304,6 +304,12 @@ chave privada fica em `keys/report-signing.key` com permissão `0600`.
 verifica a assinatura antes de exibir qualquer resumo. O `--json` só imprime o
 JSON bruto depois da verificação. Se o JSON for alterado, o comando falha com
 código `3`.
+
+Antes de montar o dump no container, o `run` recalcula o SHA-256 do arquivo
+escolhido e compara com o hash calculado na descoberta. Se existir um checksum
+ao lado do dump (`<dump>.sha256` ou `<dump sem extensão>.sha256`), ele também
+precisa concordar. Divergência aborta a execução antes de qualquer restore:
+o relatório nunca atesta um hash diferente do arquivo efetivamente restaurado.
 
 O relatório inclui tempos separados para descoberta/SHA-256, subida/readiness,
 validação/restore, testes e total.

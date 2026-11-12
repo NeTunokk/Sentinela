@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use chrono::Utc;
-use sentinela_backup::{provider_for, select_backup};
+use sentinela_backup::{provider_for, select_backup, verify_unchanged};
 use sentinela_core::config::{load_tests_from_dir, EnvironmentConfig};
 use sentinela_core::model::{BackupReport, Report, RunStatus, TestSummary, TimingsReport};
 use sentinela_core::paths::{validate_env_name, Paths};
@@ -43,6 +43,12 @@ pub async fn execute_with_run_id(args: RunArgs, paths: &Paths, run_id: String) -
     let backups = provider.discover(&config).await?;
     let discovery_ms = millis(discovery_started.elapsed());
     let backup = select_backup(&backups, args.backup.as_deref())?;
+    verify_unchanged(&backup.path, &backup.sha256).await?;
+    info!(
+        backup = %backup.id,
+        sha256 = %backup.sha256,
+        "integridade do backup conferida antes do restore"
+    );
 
     let spec = SandboxSpec::from_environment(&config, run_id.clone(), backup.path.clone());
 
