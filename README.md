@@ -53,6 +53,34 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+## Painel web local
+
+O binário `sentinela-server` serve um painel navegável (Execuções, Relatório,
+Ambientes e Limpeza) em `127.0.0.1`. Ele usa exatamente os mesmos diretórios,
+configurações e relatórios assinados da CLI.
+
+```bash
+cargo build --release
+./target/release/sentinela-server --port 8787
+# abra http://127.0.0.1:8787/
+```
+
+- O servidor escuta **somente** em `127.0.0.1` e exige um token local gerado a
+  cada inicialização, injetado no HTML. Nenhum dado sai da máquina.
+- As telas usam os arquivos reais: ambientes em `envs/*.yaml`, histórico no
+  SQLite, backups descobertos no diretório configurado e relatórios JSON/HTML
+  assinados.
+- "Executar prova de restauração" chama o mesmo fluxo da CLI (`run`) e o painel
+  acompanha o resultado. Só uma execução roda por vez.
+- A limpeza lista e remove recursos Docker com `label=sentinela=true`; ela é
+  global e preserva histórico, relatórios e arquivos de backup.
+- Remover um ambiente apaga apenas o YAML e o registro do ambiente; o histórico
+  de execuções continua disponível.
+- Os assets do painel ficam embutidos no binário em `crates/sentinela-server/web/`.
+
+Requisitos adicionais: os mesmos da CLI (Rust, Docker e imagem local do
+PostgreSQL).
+
 ## Início rápido
 
 1. Baixe a imagem que será usada no sandbox:
@@ -371,5 +399,6 @@ crates/
   sentinela-runner/   Docker, sandbox, restore e testes SQL
   sentinela-store/    histórico SQLite (runs, testes, relatórios)
   sentinela-cli/      comandos, relatórios JSON/HTML e assinatura Ed25519
+  sentinela-server/   painel web local (axum) e assets embutidos do painel
 examples/             config, ambiente e testes de exemplo
 ```

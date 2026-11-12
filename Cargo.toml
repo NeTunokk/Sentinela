@@ -5,6 +5,7 @@ members = [
     "crates/sentinela-runner",
     "crates/sentinela-store",
     "crates/sentinela-cli",
+    "crates/sentinela-server",
 ]
 resolver = "2"
 
@@ -19,6 +20,7 @@ authors = ["Sentinela Contributors"]
 anyhow = "1"
 askama = "0.16"
 async-trait = "0.1"
+axum = "0.8"
 base64 = "0.22"
 bollard = "0.21"
 chrono = { version = "0.4", features = ["serde"] }

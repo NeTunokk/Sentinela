@@ -1,16 +1,10 @@
-mod cli;
-mod commands;
-mod report;
-mod signals;
-
 use std::process::ExitCode;
 
 use clap::error::ErrorKind;
 use clap::Parser;
+use sentinela_cli::{cli::Cli, commands};
 use sentinela_core::SentinelaError;
 use tracing_subscriber::EnvFilter;
-
-use crate::cli::Cli;
 
 #[tokio::main]
 async fn main() -> ExitCode {

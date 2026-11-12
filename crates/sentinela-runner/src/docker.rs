@@ -19,6 +19,7 @@ use rand::Rng;
 use sentinela_core::config::EnvironmentConfig;
 use sentinela_core::model::{RestoreReport, RunStatus, TestOutcome};
 use sentinela_core::{Result, SentinelaError};
+use serde::Serialize;
 use tokio::time::{sleep, timeout};
 use tracing::{info, warn};
 
@@ -101,6 +102,18 @@ pub struct CleanupReport {
     pub networks_removed: usize,
     pub volumes_removed: usize,
     pub errors: Vec<String>,
+}
+
+/// Recurso Docker marcado pelo Sentinela que ainda existe no host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OrphanResource {
+    /// `container`, `network` ou `volume`.
+    pub kind: &'static str,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 struct ExecOutput {
@@ -713,6 +726,92 @@ fn is_not_found(error: &bollard::errors::Error) -> bool {
 
 fn docker_error(error: bollard::errors::Error) -> String {
     error.to_string()
+}
+
+/// Lista containers, redes e volumes com `label=sentinela=true` sem remover
+/// nada. O painel usa esta listagem antes de pedir confirmação de limpeza.
+pub async fn list_orphans() -> Result<Vec<OrphanResource>> {
+    let docker = Docker::connect_with_local_defaults().map_err(|error| {
+        SentinelaError::Docker(format!(
+            "não foi possível conectar ao Docker local: {error}"
+        ))
+    })?;
+    list_orphans_with(&docker).await
+}
+
+async fn list_orphans_with(docker: &Docker) -> Result<Vec<OrphanResource>> {
+    let mut resources = Vec::new();
+    let mut filters = HashMap::new();
+    filters.insert("label", vec!["sentinela=true"]);
+
+    let containers = docker
+        .list_containers(Some(
+            ListContainersOptionsBuilder::new()
+                .all(true)
+                .filters(&filters)
+                .build(),
+        ))
+        .await
+        .map_err(|error| {
+            SentinelaError::Docker(format!("falha ao listar containers órfãos: {error}"))
+        })?;
+    for container in containers {
+        let labels = container.labels.as_ref();
+        let name = container
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .map(|name| name.trim_start_matches('/').to_string())
+            .or_else(|| container.id.clone())
+            .unwrap_or_else(|| "—".to_string());
+        resources.push(OrphanResource {
+            kind: "container",
+            name,
+            run_id: label(labels, LABEL_RUN_ID).map(str::to_string),
+            role: label(labels, LABEL_ROLE).map(str::to_string),
+        });
+    }
+
+    let networks = docker
+        .list_networks(Some(
+            ListNetworksOptionsBuilder::new().filters(&filters).build(),
+        ))
+        .await
+        .map_err(|error| SentinelaError::Docker(format!("falha ao listar redes órfãs: {error}")))?;
+    for network in networks {
+        let Some(name) = network.name else { continue };
+        let labels = network.labels.as_ref();
+        resources.push(OrphanResource {
+            kind: "network",
+            name,
+            run_id: label(labels, LABEL_RUN_ID).map(str::to_string),
+            role: label(labels, LABEL_ROLE).map(str::to_string),
+        });
+    }
+
+    let volumes = docker
+        .list_volumes(Some(
+            ListVolumesOptionsBuilder::new().filters(&filters).build(),
+        ))
+        .await
+        .map_err(|error| {
+            SentinelaError::Docker(format!("falha ao listar volumes órfãos: {error}"))
+        })?;
+    for volume in volumes.volumes.unwrap_or_default() {
+        let labels = Some(&volume.labels);
+        resources.push(OrphanResource {
+            kind: "volume",
+            name: volume.name,
+            run_id: label(labels, LABEL_RUN_ID).map(str::to_string),
+            role: label(labels, LABEL_ROLE).map(str::to_string),
+        });
+    }
+
+    Ok(resources)
+}
+
+fn label<'a>(labels: Option<&'a HashMap<String, String>>, key: &str) -> Option<&'a str> {
+    labels?.get(key).map(String::as_str)
 }
 
 /// Conecta ao Docker local e remove containers, redes e volumes com

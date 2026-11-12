@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinela</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <nav class="side" aria-label="Navegação principal">
+      <a class="brand" href="#/execucoes" aria-label="Sentinela — Execuções">
+        <img src="assets/sentinela-logo.png" alt="Sentinela">
+      </a>
+      <a class="nv" data-nav="execucoes" href="#/execucoes">Execuções</a>
+      <a class="nv" data-nav="ambientes" href="#/ambientes">Ambientes</a>
+      <a class="nv" data-nav="limpeza" href="#/limpeza">Limpeza</a>
+      <p class="side-foot">v0.1 · servidor local em 127.0.0.1</p>
+    </nav>
+    <main id="view" class="main"></main>
+  </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script>window.__SENTINELA_TOKEN__ = "__SENTINELA_TOKEN_VALUE__";</script>
+  <script src="app.js"></script>
+</body>
+</html>

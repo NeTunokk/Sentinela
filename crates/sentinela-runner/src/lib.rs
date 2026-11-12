@@ -8,6 +8,7 @@ pub mod docker;
 pub mod sql_tests;
 
 pub use docker::{
-    cleanup_orphans, random_password, CleanupReport, DockerSession, RunExecution, SandboxSpec,
+    cleanup_orphans, list_orphans, random_password, CleanupReport, DockerSession, OrphanResource,
+    RunExecution, SandboxSpec,
 };
 pub use sql_tests::run_sql_tests;

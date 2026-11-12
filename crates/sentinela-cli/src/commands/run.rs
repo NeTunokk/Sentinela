@@ -16,6 +16,14 @@ use crate::cli::RunArgs;
 use crate::report::sign::ReportSigner;
 
 pub async fn execute(args: RunArgs, paths: &Paths) -> Result<i32> {
+    execute_with_run_id(args, paths, Uuid::new_v4().to_string()).await
+}
+
+/// Executa uma prova de restauração usando um `run_id` já conhecido.
+///
+/// O servidor do painel usa esta variante para responder imediatamente qual
+/// execução foi enfileirada e acompanhar o resultado no histórico.
+pub async fn execute_with_run_id(args: RunArgs, paths: &Paths, run_id: String) -> Result<i32> {
     validate_env_name(&args.env)?;
     let started_at = Utc::now();
     let total_started = Instant::now();
@@ -36,7 +44,6 @@ pub async fn execute(args: RunArgs, paths: &Paths) -> Result<i32> {
     let discovery_ms = millis(discovery_started.elapsed());
     let backup = select_backup(&backups, args.backup.as_deref())?;
 
-    let run_id = Uuid::new_v4().to_string();
     let spec = SandboxSpec::from_environment(&config, run_id.clone(), backup.path.clone());
 
     if !args.keep {

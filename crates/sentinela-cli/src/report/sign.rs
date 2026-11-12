@@ -115,6 +115,8 @@ fn set_key_permissions(path: &Path) -> Result<()> {
         permissions.set_mode(0o600);
         fs::set_permissions(path, permissions)?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
 
