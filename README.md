@@ -24,9 +24,39 @@ testes SQL (transação sempre revertida)
 relatório JSON + HTML + SHA-256 + assinatura Ed25519
 ```
 
+## Usar sem instalar Rust
+
+Quem só vai **usar** o Sentinela não precisa de Rust nem de compilador. Há dois
+caminhos:
+
+1. **Baixar um pacote pronto** na aba *Releases* do repositório:
+
+   | Pacote | Sistema |
+   | --- | --- |
+   | `sentinela-<versao>-linux-x86_64.tar.gz` | Linux x86_64 |
+   | `sentinela-<versao>-windows-x86_64.zip` | Windows x86_64 |
+
+   Cada pacote traz `sentinela`, `sentinela-server`, `README.md` e
+   `COMO-USAR.txt`. O arquivo `.sha256` publicado ao lado serve para conferir a
+   integridade do download.
+
+2. **Gerar o pacote você mesmo**, em uma máquina que tenha Rust — uma vez só:
+
+   ```bash
+   ./scripts/empacotar.sh            # Linux e macOS
+   pwsh ./scripts/empacotar.ps1      # Windows
+   ```
+
+   O resultado fica em `dist/` e pode ser copiado para qualquer máquina.
+
+Em ambos os casos a máquina de destino precisa apenas de **Docker** e da imagem
+`postgres:16`. Os executáveis são autossuficientes: o SQLite é compilado junto e
+os arquivos do painel web estão embutidos no binário.
+
 ## Requisitos
 
-- Rust stable (o repositório usa `rust-toolchain.toml`)
+**Para usar um pacote pronto:**
+
 - Docker acessível pelo usuário atual
 - Imagem do PostgreSQL já baixada localmente, por exemplo:
 
@@ -38,11 +68,24 @@ relatório JSON + HTML + SHA-256 + assinatura Ed25519
   `sentinela run` fazem uma validação adicional com `pg_restore --list`; a
   validação autoritativa é sempre feita dentro do container.
 
+**Para compilar a partir do código:**
+
+- Rust stable (o repositório usa `rust-toolchain.toml`)
+- Compilador C: `build-essential` no Linux, MSVC no Windows (o SQLite é
+  compilado junto com o projeto)
+
 ## Build
 
 ```bash
 cargo build --release
 ./target/release/sentinela --help
+```
+
+Para gerar o pacote distribuível (que dispensa Rust na máquina de destino):
+
+```bash
+./scripts/empacotar.sh        # Linux e macOS
+pwsh ./scripts/empacotar.ps1  # Windows
 ```
 
 Durante o desenvolvimento:
@@ -78,8 +121,8 @@ cargo build --release
   de execuções continua disponível.
 - Os assets do painel ficam embutidos no binário em `crates/sentinela-server/web/`.
 
-Requisitos adicionais: os mesmos da CLI (Rust, Docker e imagem local do
-PostgreSQL).
+Requisitos adicionais: os mesmos da CLI — Docker e a imagem local do PostgreSQL
+para usar; Rust apenas para compilar.
 
 ## Início rápido
 

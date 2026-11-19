@@ -1,0 +1,52 @@
+Sentinela — como usar este pacote
+=================================
+
+Este pacote já traz os executáveis compilados. Você NÃO precisa instalar Rust
+nem compilar nada.
+
+1. Requisito único: Docker em execução.
+
+   Linux  -> Docker Engine (rootful), com seu usuário no grupo "docker".
+   Windows -> Docker Desktop em execução.
+
+2. Baixe a imagem do PostgreSQL 16 uma única vez:
+
+   docker pull postgres:16
+
+   O Sentinela não baixa imagens sozinho, para não depender de rede.
+
+3. Suba o painel:
+
+   Linux/macOS:  ./sentinela-server
+   Windows:      sentinela-server.exe
+
+   Depois abra: http://127.0.0.1:8787
+
+4. Na aba "Ambientes", crie um ambiente apontando para:
+
+   - a pasta onde estão os arquivos .dump
+   - a pasta onde estão os testes SQL (arquivos YAML)
+
+5. Clique em "Testar" no backup que quiser verificar.
+   O resultado aparece em "Execuções", com relatório assinado.
+
+Linha de comando (opcional):
+
+   ./sentinela --help
+   ./sentinela env add
+   ./sentinela run --env NOME_DO_AMBIENTE
+
+Conferir a integridade do download:
+
+   Linux/macOS:
+     sha256sum -c sentinela-<versao>-<sistema>-<arquitetura>.tar.gz.sha256
+
+   Windows (PowerShell):
+     Get-FileHash .\sentinela-<versao>-windows-x86_64.zip -Algorithm SHA256
+
+Onde ficam os dados (criados na primeira execução):
+
+   ~/.config/sentinela/        ambientes (YAML)
+   ~/.local/share/sentinela/   histórico, relatórios assinados e chave Ed25519
+
+Para desinstalar: apague os dois diretórios acima e os executáveis.

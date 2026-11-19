@@ -10,3 +10,6 @@
 /keys/
 /config.yaml
 *.key
+
+# Pacotes de distribuição gerados por scripts/empacotar.*
+/dist/
