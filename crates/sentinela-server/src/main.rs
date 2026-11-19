@@ -2,7 +2,9 @@ mod api;
 mod web;
 
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::middleware;
 use axum::routing::{get, post};
@@ -10,7 +12,10 @@ use axum::Router;
 use base64::Engine as _;
 use rand::Rng;
 use sentinela_core::paths::Paths;
-use tokio::sync::Mutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::{Mutex, Notify};
+use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
 
 /// Estado compartilhado por todas as rotas do painel.
@@ -19,6 +24,8 @@ pub(crate) struct AppState {
     pub paths: Paths,
     pub token: Arc<String>,
     pub active_runs: Arc<Mutex<HashMap<String, ActiveRun>>>,
+    /// Acionado pelo botão "Encerrar servidor" do painel.
+    pub shutdown: Arc<Notify>,
 }
 
 /// Execução iniciada pelo painel e ainda não concluída (ou que falhou antes de
@@ -36,19 +43,38 @@ pub(crate) enum ActiveRunState {
     Failed(String),
 }
 
+/// Opções lidas da linha de comando.
+struct Options {
+    port: u16,
+    open_browser: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
-    let port = parse_port();
+    let options = parse_options();
+
+    // Duplo clique duas vezes: em vez de falhar com "porta em uso", abre o
+    // painel que já está no ar e sai.
+    if panel_is_running(options.port).await {
+        let url = panel_url(options.port);
+        println!("Sentinela já está em execução em {url}");
+        if options.open_browser {
+            open_browser(&url);
+        }
+        return Ok(());
+    }
 
     let paths = Paths::discover()?;
     paths.ensure()?;
 
     let token = new_token();
+    let shutdown = Arc::new(Notify::new());
     let state = AppState {
         paths,
         token: Arc::new(token),
         active_runs: Arc::new(Mutex::new(HashMap::new())),
+        shutdown: shutdown.clone(),
     };
 
     let api = Router::new()
@@ -67,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/runs/{id}/report.html", get(api::report_html))
         .route("/api/resources", get(api::list_resources))
         .route("/api/cleanup", post(api::run_cleanup))
+        .route("/api/shutdown", post(api::shutdown))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             api::require_token,
@@ -81,11 +108,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(api)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    println!("Sentinela — painel local em http://127.0.0.1:{port}/");
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", options.port)).await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            return Err(format!(
+                "a porta {} já está em uso por outro programa; feche-o ou use --port <outra>",
+                options.port
+            )
+            .into());
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    let url = panel_url(options.port);
+    println!("Sentinela — painel local em {url}");
     println!("O servidor escuta apenas em 127.0.0.1; nenhum dado sai da máquina.");
-    axum::serve(listener, app).await?;
+    println!("Use o botão \"Encerrar servidor\" no painel para desligar, ou Ctrl+C.");
+
+    if options.open_browser {
+        open_browser(&url);
+    }
+
+    let shutdown_signal = shutdown.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal.notified().await;
+            println!("Sentinela — encerrando o servidor…");
+        })
+        .await?;
+
+    println!("Sentinela — servidor encerrado.");
     Ok(())
+}
+
+fn panel_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/")
+}
+
+/// Verifica se já existe um painel do Sentinela escutando nesta porta.
+///
+/// A resposta só conta como "já rodando" quando é o nosso HTML: qualquer outro
+/// serviço na porta é tratado como porta ocupada, não como instância nossa.
+async fn panel_is_running(port: u16) -> bool {
+    let connect = timeout(
+        Duration::from_millis(700),
+        TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await;
+    let Ok(Ok(mut stream)) = connect else {
+        return false;
+    };
+
+    let request = format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).await.is_err() {
+        return false;
+    }
+
+    let mut response = Vec::new();
+    let _ = timeout(Duration::from_secs(2), stream.read_to_end(&mut response)).await;
+
+    String::from_utf8_lossy(&response).contains("<title>Sentinela</title>")
+}
+
+/// Abre o painel no navegador padrão sem depender de nenhuma biblioteca extra.
+fn open_browser(url: &str) {
+    let result = if cfg!(target_os = "windows") {
+        // O primeiro argumento vazio é o título da janela exigido por `start`.
+        Command::new("cmd").args(["/C", "start", "", url]).spawn()
+    } else if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).spawn()
+    } else {
+        Command::new("xdg-open").arg(url).spawn()
+    };
+
+    if let Err(error) = result {
+        eprintln!("Não foi possível abrir o navegador automaticamente ({error}).");
+        eprintln!("Abra manualmente: {url}");
+    }
 }
 
 fn init_tracing() {
@@ -104,24 +203,30 @@ fn new_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn parse_port() -> u16 {
+fn parse_options() -> Options {
+    let mut port = 8787;
+    let mut open_browser = true;
     let mut args = std::env::args().skip(1);
+
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--port" | "-p" => {
                 if let Some(value) = args.next() {
-                    if let Ok(port) = value.parse::<u16>() {
-                        return port;
+                    if let Ok(value) = value.parse::<u16>() {
+                        port = value;
                     }
                 }
             }
+            "--no-open" => open_browser = false,
             "--help" | "-h" => {
-                println!("sentinela-server [--port <porta>]");
+                println!("sentinela-server [--port <porta>] [--no-open]");
                 println!("Serve o painel local em 127.0.0.1 (padrão: 8787).");
+                println!("Abre o navegador automaticamente; --no-open desativa.");
                 std::process::exit(0);
             }
             _ => {}
         }
     }
-    8787
+
+    Options { port, open_browser }
 }

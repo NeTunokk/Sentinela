@@ -98,11 +98,101 @@ input:focus-visible {
 .nv.on { background: #2B2209; color: var(--gold); font-weight: 600; }
 
 .side-foot {
-  margin: auto 12px 0;
-  padding-top: 20px;
+  margin: 0 12px;
   font-size: 12px;
   color: var(--muted);
 }
+
+.side-end {
+  margin-top: auto;
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.shutdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: #241013;
+  border: 1px solid #5C2B2E;
+  border-radius: 8px;
+  color: #FCA5A5;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.shutdown:hover {
+  background: #321619;
+  border-color: #8A3B3F;
+  color: #FECACA;
+}
+
+.shutdown:disabled {
+  opacity: .6;
+  cursor: progress;
+}
+
+.shutdown-icon { font-size: 15px; line-height: 1; }
+
+/* ── Tela de encerramento ─────────────────────────────────────── */
+
+.shutdown-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 11, 3, .96);
+}
+
+.shutdown-screen[hidden] { display: none; }
+
+.shutdown-box {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+
+.shutdown-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 18px;
+  border: 1px solid #5C2B2E;
+  border-radius: 50%;
+  background: #241013;
+  color: #FCA5A5;
+  font-size: 22px;
+}
+
+.shutdown-box h2 { margin-bottom: 10px; font-size: 20px; }
+
+.shutdown-box p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.shutdown-hint {
+  margin: 14px 0 20px;
+  font-size: 13px;
+}
+
+.shutdown-box .btn { min-width: 180px; }
 
 /* ── Área principal ───────────────────────────────────────────── */
 
