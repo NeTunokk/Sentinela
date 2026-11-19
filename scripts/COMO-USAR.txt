@@ -1,40 +1,68 @@
 Sentinela — como usar este pacote
 =================================
 
-Este pacote já traz os executáveis compilados. Você NÃO precisa instalar Rust
-nem compilar nada.
+Este pacote já traz os executáveis compilados e a imagem do PostgreSQL 16.
+Você NÃO precisa instalar Rust, compilar nada, nem baixar imagens do Docker.
 
 1. Requisito único: Docker em execução.
 
-   Linux  -> Docker Engine (rootful), com seu usuário no grupo "docker".
+   Linux   -> Docker Engine (rootful), com seu usuário no grupo "docker".
    Windows -> Docker Desktop em execução.
+   macOS   -> Docker Desktop em execução.
 
-2. Baixe a imagem do PostgreSQL 16 uma única vez:
+   A verificação de integridade roda dentro de um container descartável, por
+   isso o Docker é obrigatório. É ele que garante o isolamento da restauração.
 
-   docker pull postgres:16
+2. Abra o painel com duplo clique (ou pelo terminal):
 
-   O Sentinela não baixa imagens sozinho, para não depender de rede.
-
-3. Suba o painel:
-
-   Linux/macOS:  ./sentinela-server
    Windows:      sentinela-server.exe
+   Linux/macOS:  ./sentinela-server
 
-   Depois abra: http://127.0.0.1:8787
+   O navegador abre sozinho em:  http://127.0.0.1:8787
 
-4. Na aba "Ambientes", crie um ambiente apontando para:
+   Se você abrir de novo, o programa apenas traz a página que já está no ar
+   para a frente — ele não inicia um segundo servidor.
+
+3. Em "Ambientes", crie um ambiente apontando para:
 
    - a pasta onde estão os arquivos .dump
    - a pasta onde estão os testes SQL (arquivos YAML)
 
-5. Clique em "Testar" no backup que quiser verificar.
+4. Clique em "Testar" no backup que quiser verificar.
    O resultado aparece em "Execuções", com relatório assinado.
+
+5. Para encerrar: use o botão "Encerrar servidor", no canto inferior esquerdo
+   do painel. Ele mostra "Servidor encerrado", fecha a janela (quando o
+   navegador permite) e derruba o servidor local.
+
+A imagem do PostgreSQL
+----------------------
+
+O arquivo postgres16.tar.gz (ou postgres16.tar) fica na mesma pasta dos
+executáveis. Na primeira execução o Sentinela o carrega automaticamente com
+"docker load". Isso leva alguns segundos e ocupa cerca de 700 MB no disco do
+Docker; nas execuções seguintes a imagem já está pronta e nada é recarregado.
+
+O programa não acessa a rede: ele nunca faz "docker pull".
+
+Se o arquivo não estiver na pasta, o painel mostra um erro explicando. Nesse
+caso, carregue manualmente:
+
+   docker load -i postgres16.tar.gz
+
+Instalações compartilhadas (avançado):
+
+   SENTINELA_IMAGE_DIR=/caminho/da/pasta    procura o arquivo nessa pasta
+   SENTINELA_IMAGE_FILE=/caminho/arquivo    usa exatamente esse arquivo
 
 Linha de comando (opcional):
 
    ./sentinela --help
    ./sentinela env add
    ./sentinela run --env NOME_DO_AMBIENTE
+
+   ./sentinela-server --port 8790      outra porta
+   ./sentinela-server --no-open        não abre o navegador
 
 Conferir a integridade do download:
 
@@ -49,4 +77,12 @@ Onde ficam os dados (criados na primeira execução):
    ~/.config/sentinela/        ambientes (YAML)
    ~/.local/share/sentinela/   histórico, relatórios assinados e chave Ed25519
 
-Para desinstalar: apague os dois diretórios acima e os executáveis.
+No Windows, "~" é a sua pasta de usuário (C:\Users\<nome>).
+
+Para desinstalar: apague os dois diretórios acima e os executáveis. A imagem
+carregada no Docker pode ser removida com "docker rmi postgres:16".
+
+Observação sobre Windows nativo: o painel, a lista de backups e o SHA-256
+funcionam normalmente, mas a prova de restauração ainda depende de correções no
+tratamento de caminhos com ":" (é o mesmo bloqueio de antes, não é causado por
+este pacote). Em Linux e WSL2 o fluxo completo funciona.

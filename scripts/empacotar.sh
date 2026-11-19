@@ -4,8 +4,12 @@
 # Uso:
 #   scripts/empacotar.sh [--sem-build] [--versao X.Y.Z]
 #
-#   --sem-build   não compila; usa os binários que já estão em target/release
-#   --versao      versão do pacote (padrão: a declarada em Cargo.toml)
+#   --sem-build      não compila; usa os binários que já estão em target/release
+#   --versao         versão do pacote (padrão: a declarada em Cargo.toml)
+#   --exigir-imagem  falha se postgres16.tar[.gz] não estiver na raiz
+#
+# A imagem do PostgreSQL 16 viaja no pacote: gere-a antes com
+#   scripts/preparar-imagem.sh
 #
 # O resultado fica em dist/:
 #   sentinela-<versao>-<sistema>-<arquitetura>.tar.gz
@@ -16,10 +20,12 @@ raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$raiz"
 
 sem_build=0
+exigir_imagem=0
 versao=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --sem-build) sem_build=1 ;;
+    --exigir-imagem) exigir_imagem=1 ;;
     --versao)
       shift
       versao="${1:-}"
@@ -33,10 +39,14 @@ while [ $# -gt 0 ]; do
 Monta um pacote distribuível do Sentinela, para entregar a quem não tem Rust.
 
 Uso:
-  scripts/empacotar.sh [--sem-build] [--versao X.Y.Z]
+  scripts/empacotar.sh [--sem-build] [--versao X.Y.Z] [--exigir-imagem]
 
-  --sem-build   não compila; usa os binários que já estão em target/release
-  --versao      versão do pacote (padrão: a declarada em Cargo.toml)
+  --sem-build      não compila; usa os binários que já estão em target/release
+  --versao         versão do pacote (padrão: a declarada em Cargo.toml)
+  --exigir-imagem  falha se postgres16.tar[.gz] não estiver na raiz
+
+A imagem do PostgreSQL 16 viaja no pacote: gere-a antes com
+  scripts/preparar-imagem.sh
 
 O resultado fica em dist/:
   sentinela-<versao>-<sistema>-<arquitetura>.tar.gz
@@ -105,6 +115,28 @@ cp README.md "dist/$nome/"
 cp scripts/COMO-USAR.txt "dist/$nome/"
 if [ -f LICENSE ]; then
   cp LICENSE "dist/$nome/"
+fi
+
+# Imagem do PostgreSQL 16: viaja no pacote e é carregada por `docker load` na
+# primeira execução. É o que dispensa `docker pull` na máquina do cliente.
+arquivo_imagem=""
+for candidato in postgres16.tar.gz postgres16.tar; do
+  if [ -f "$candidato" ]; then
+    arquivo_imagem="$candidato"
+    break
+  fi
+done
+
+if [ -n "$arquivo_imagem" ]; then
+  cp "$arquivo_imagem" "dist/$nome/$arquivo_imagem"
+  echo "imagem incluída: $arquivo_imagem ($(du -h "$arquivo_imagem" | cut -f1))"
+elif [ "$exigir_imagem" -eq 1 ]; then
+  echo "erro: postgres16.tar.gz não encontrado na raiz do repositório" >&2
+  echo "      gere com scripts/preparar-imagem.sh" >&2
+  exit 1
+else
+  echo "aviso: postgres16.tar[.gz] não encontrado; o pacote sairá sem a imagem" >&2
+  echo "       gere com scripts/preparar-imagem.sh e rode novamente" >&2
 fi
 
 tar -C dist -czf "dist/$nome.tar.gz" "$nome"

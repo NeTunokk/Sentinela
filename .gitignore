@@ -13,3 +13,9 @@
 
 # Pacotes de distribuição gerados por scripts/empacotar.*
 /dist/
+
+# Imagem do PostgreSQL que viaja no pacote (grande; gerada sob demanda)
+/postgres16.tar
+/postgres16.tar.gz
+/postgres16.tar.sha256
+/postgres16.tar.gz.sha256

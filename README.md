@@ -5,8 +5,8 @@ PostgreSQL descartável em Docker, restaura o dump, executa testes SQL e gera um
 relatório em JSON/HTML com SHA-256 e assinatura Ed25519.
 
 O fluxo inteiro roda na sua máquina: nenhum byte do backup ou dos dados sai do
-host. O Sentinela também **não faz `docker pull`**, para não depender de rede em
-tempo de execução.
+host. O Sentinela também **não faz `docker pull`**: a imagem do PostgreSQL 16
+viaja no pacote e é carregada com `docker load` na primeira execução.
 
 ```
 backup (.dump)
@@ -36,33 +36,35 @@ caminhos:
    | `sentinela-<versao>-linux-x86_64.tar.gz` | Linux x86_64 |
    | `sentinela-<versao>-windows-x86_64.zip` | Windows x86_64 |
 
-   Cada pacote traz `sentinela`, `sentinela-server`, `README.md` e
-   `COMO-USAR.txt`. O arquivo `.sha256` publicado ao lado serve para conferir a
-   integridade do download.
+   Cada pacote traz `sentinela`, `sentinela-server`, `postgres16.tar.gz`
+   (imagem do PostgreSQL 16), `README.md` e `COMO-USAR.txt`. O arquivo
+   `.sha256` publicado ao lado serve para conferir a integridade do download.
 
-2. **Gerar o pacote você mesmo**, em uma máquina que tenha Rust — uma vez só:
+2. **Gerar o pacote você mesmo**, em uma máquina que tenha Rust e Docker — uma
+   vez só:
 
    ```bash
+   ./scripts/preparar-imagem.sh       # gera postgres16.tar.gz (usa Docker)
    ./scripts/empacotar.sh            # Linux e macOS
    pwsh ./scripts/empacotar.ps1      # Windows
    ```
 
-   O resultado fica em `dist/` e pode ser copiado para qualquer máquina.
+   No Windows, `scripts/preparar-imagem.ps1` gera `postgres16.tar` (sem
+   compressão). O Sentinela aceita as duas extensões. O resultado fica em
+   `dist/` e pode ser copiado para qualquer máquina.
 
-Em ambos os casos a máquina de destino precisa apenas de **Docker** e da imagem
-`postgres:16`. Os executáveis são autossuficientes: o SQLite é compilado junto e
-os arquivos do painel web estão embutidos no binário.
+Em ambos os casos a máquina de destino precisa apenas de **Docker em execução**.
+Os executáveis são autossuficientes: o SQLite é compilado junto, os arquivos do
+painel web estão embutidos no binário e a imagem do banco acompanha o pacote.
 
 ## Requisitos
 
 **Para usar um pacote pronto:**
 
-- Docker acessível pelo usuário atual
-- Imagem do PostgreSQL já baixada localmente, por exemplo:
-
-  ```bash
-  docker pull postgres:16
-  ```
+- Docker acessível pelo usuário atual. A imagem `postgres:16` **já vem no
+  pacote** e é carregada automaticamente (`docker load`) na primeira execução —
+  não é preciso `docker pull` nem internet. A imagem ocupa cerca de 700 MB no
+  disco do Docker.
 
 - Opcional: `pg_restore` no host. Quando presente, `sentinela backups list` e
   `sentinela run` fazem uma validação adicional com `pg_restore --list`; a
@@ -84,9 +86,13 @@ cargo build --release
 Para gerar o pacote distribuível (que dispensa Rust na máquina de destino):
 
 ```bash
-./scripts/empacotar.sh        # Linux e macOS
-pwsh ./scripts/empacotar.ps1  # Windows
+./scripts/preparar-imagem.sh   # gera postgres16.tar.gz a partir do Docker local
+./scripts/empacotar.sh         # Linux e macOS
+pwsh ./scripts/empacotar.ps1   # Windows (-ExigirImagem no CI)
 ```
+
+`preparar-imagem.sh`/`.ps1` fazem `docker pull postgres:16` **uma única vez**, na
+máquina de quem empacota. O Sentinela em si nunca acessa a rede.
 
 Durante o desenvolvimento:
 
@@ -105,9 +111,16 @@ configurações e relatórios assinados da CLI.
 ```bash
 cargo build --release
 ./target/release/sentinela-server --port 8787
-# abra http://127.0.0.1:8787/
+# o navegador abre sozinho em http://127.0.0.1:8787/
 ```
 
+- **Duplo clique e usa:** ao iniciar, o servidor abre o painel no navegador
+  padrão. `--no-open` desativa esse comportamento.
+- **Instância única:** se já houver um painel na porta, o programa não inicia um
+  segundo servidor — apenas abre a página que já está no ar.
+- **Encerrar:** o botão no canto inferior esquerdo do painel chama
+  `POST /api/shutdown`, mostra "Servidor encerrado" e desliga o processo com
+  desligamento gracioso (as requisições em andamento terminam antes).
 - O servidor escuta **somente** em `127.0.0.1` e exige um token local gerado a
   cada inicialização, injetado no HTML. Nenhum dado sai da máquina.
 - As telas usam os arquivos reais: ambientes em `envs/*.yaml`, histórico no
@@ -121,16 +134,18 @@ cargo build --release
   de execuções continua disponível.
 - Os assets do painel ficam embutidos no binário em `crates/sentinela-server/web/`.
 
-Requisitos adicionais: os mesmos da CLI — Docker e a imagem local do PostgreSQL
-para usar; Rust apenas para compilar.
+Requisitos adicionais: os mesmos da CLI — Docker para usar e Rust apenas para
+compilar. A imagem do PostgreSQL 16 acompanha o pacote.
 
 ## Início rápido
 
-1. Baixe a imagem que será usada no sandbox:
+1. Garanta a imagem do PostgreSQL 16 no Docker (uma vez só):
 
    ```bash
-   docker pull postgres:16
+   ./scripts/preparar-imagem.sh   # gera postgres16.tar.gz e carrega no Docker
    ```
+
+   Alternativa: `docker pull postgres:16`.
 
 2. Crie um ambiente apontando para o diretório de dumps:
 
@@ -385,8 +400,8 @@ Se você quer validar o fluxo sem o teste automatizado:
 cargo build --release
 export PATH="$PWD/target/release:$PATH"
 
-# 2. Imagem local (o Sentinela não faz pull)
-docker pull postgres:16
+# 2. Imagem local (o Sentinela não faz pull; usa postgres16.tar[.gz] se existir)
+./scripts/preparar-imagem.sh
 
 # 3. Diretórios de trabalho isolados
 export SENTINELA_CONFIG_DIR=/tmp/sentinela-demo/config
@@ -432,7 +447,9 @@ sentinela report show <run_id>
 ## Limitações do 0.1
 
 - Apenas dumps lógicos (`pg_dump -Fc`); PgBackRest é um stub.
-- A imagem do PostgreSQL precisa existir localmente.
+- A imagem do PostgreSQL precisa existir localmente ou o arquivo
+  `postgres16.tar[.gz]` precisa estar ao lado do executável (é o formato do
+  pacote distribuído).
 - Os testes conectam ao IP do container na rede `internal`; nenhuma porta é
   publicada e o container continua sem saída para a internet.
 - O bind mount do backup não aceita caminhos com `:` no 0.1.

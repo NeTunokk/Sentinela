@@ -13,16 +13,19 @@
 .PARAMETER Versao
   Versão do pacote. Padrão: a declarada em Cargo.toml.
 
-.EXAMPLE
-  .\scripts\empacotar.ps1
+.PARAMETER ExigirImagem
+  Falha se postgres16.tar[.gz] não estiver na raiz do repositório. Use no CI,
+  onde a imagem é obrigatória. Sem esta opção, o pacote sai com um aviso.
 
-.EXAMPLE
-  .\scripts\empacotar.ps1 -SemBuild -Versao 0.1.0
+.NOTES
+  A imagem do PostgreSQL 16 viaja no pacote. Gere-a antes com
+  scripts/preparar-imagem.ps1 (ou copie postgres16.tar.gz produzido no Linux).
 #>
 [CmdletBinding()]
 param(
   [switch]$SemBuild,
-  [string]$Versao
+  [string]$Versao,
+  [switch]$ExigirImagem
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,6 +72,24 @@ Copy-Item (Join-Path $alvo "sentinela-server.exe") $destino
 Copy-Item "README.md" $destino
 Copy-Item (Join-Path "scripts" "COMO-USAR.txt") $destino
 if (Test-Path "LICENSE") { Copy-Item "LICENSE" $destino }
+
+# Imagem do PostgreSQL 16: viaja no pacote e é carregada por `docker load` na
+# primeira execução. É o que dispensa `docker pull` na máquina do cliente.
+$arquivoImagem = $null
+foreach ($candidato in @("postgres16.tar.gz", "postgres16.tar")) {
+  if (Test-Path $candidato) { $arquivoImagem = $candidato; break }
+}
+
+if ($arquivoImagem) {
+  Copy-Item $arquivoImagem $destino
+  $mb = [math]::Round((Get-Item $arquivoImagem).Length / 1MB, 1)
+  Write-Host "imagem incluída: $arquivoImagem ($mb MB)"
+} elseif ($ExigirImagem) {
+  throw "postgres16.tar[.gz] não encontrado na raiz do repositório (gere com scripts/preparar-imagem.ps1)"
+} else {
+  Write-Warning "postgres16.tar[.gz] não encontrado; o pacote sairá sem a imagem"
+  Write-Warning "gere com scripts/preparar-imagem.ps1 e rode novamente"
+}
 
 Compress-Archive -Path (Join-Path $destino "*") -DestinationPath $zip -CompressionLevel Optimal -Force
 
