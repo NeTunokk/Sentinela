@@ -115,6 +115,16 @@ pub(crate) async fn health() -> Json<Value> {
     }))
 }
 
+/// Encerra o servidor local (acionado pelo botão "Encerrar servidor").
+///
+/// A resposta é entregue antes do desligamento gracioso: o axum espera as
+/// requisições em andamento terminarem. A rota está atrás de `require_token`,
+/// portanto só o próprio painel consegue desligar o processo.
+pub(crate) async fn shutdown(State(state): State<AppState>) -> Json<Value> {
+    state.shutdown.notify_one();
+    Json(json!({ "status": "shutting_down" }))
+}
+
 #[derive(Serialize)]
 struct EnvironmentDto {
     name: String,

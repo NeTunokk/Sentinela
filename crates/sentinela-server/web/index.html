@@ -15,9 +15,25 @@
       <a class="nv" data-nav="execucoes" href="#/execucoes">Execuções</a>
       <a class="nv" data-nav="ambientes" href="#/ambientes">Ambientes</a>
       <a class="nv" data-nav="limpeza" href="#/limpeza">Limpeza</a>
-      <p class="side-foot">v0.1 · servidor local em 127.0.0.1</p>
+      <div class="side-end">
+        <button type="button" class="shutdown" data-action="shutdown" title="Encerra o servidor local e fecha o painel">
+          <span class="shutdown-icon" aria-hidden="true">⏻</span>
+          Encerrar servidor
+        </button>
+        <p class="side-foot">v0.1 · servidor local em 127.0.0.1</p>
+      </div>
     </nav>
     <main id="view" class="main"></main>
+  </div>
+
+  <div id="shutdown-screen" class="shutdown-screen" hidden>
+    <div class="shutdown-box" role="alertdialog" aria-modal="true" aria-labelledby="shutdown-title">
+      <span class="shutdown-mark" aria-hidden="true">⏻</span>
+      <h2 id="shutdown-title">Servidor encerrado</h2>
+      <p>O Sentinela foi desligado com segurança. Nenhum dado saiu desta máquina.</p>
+      <p id="shutdown-hint" class="shutdown-hint">Fechando esta janela…</p>
+      <button type="button" id="shutdown-close" class="btn">Fechar esta janela</button>
+    </div>
   </div>
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>

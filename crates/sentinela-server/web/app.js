@@ -1070,9 +1070,68 @@ function confirmDialog({ title, body, confirmLabel = 'Confirmar', danger = true,
   });
 }
 
+/* ── Encerrar servidor ──────────────────────────────────────── */
+
+let shuttingDown = false;
+
+async function shutdownServer() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  const button = document.querySelector('[data-action="shutdown"]');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Encerrando…';
+  }
+
+  if (pollTimer) {
+    window.clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  try {
+    await api('/api/shutdown', { method: 'POST' });
+  } catch (_) {
+    /* o servidor pode encerrar antes de responder; seguimos para a mensagem */
+  }
+
+  showShutdownScreen();
+}
+
+function showShutdownScreen() {
+  const screen = document.getElementById('shutdown-screen');
+  if (!screen) return;
+
+  screen.hidden = false;
+  document.body.classList.add('is-shutdown');
+
+  const close = document.getElementById('shutdown-close');
+  if (close) close.addEventListener('click', closeShutdownWindow, { once: true });
+
+  /* Dá tempo de ler a mensagem antes de tentar fechar a janela. */
+  window.setTimeout(closeShutdownWindow, 1800);
+}
+
+function closeShutdownWindow() {
+  window.close();
+
+  /* Se o navegador bloqueou o fechamento, orienta o usuário. */
+  window.setTimeout(() => {
+    const hint = document.getElementById('shutdown-hint');
+    if (!hint) return;
+    hint.textContent = 'O navegador não permitiu fechar esta aba automaticamente. Feche-a manualmente (Ctrl+W).';
+    hint.style.color = 'var(--text)';
+  }, 600);
+}
+
 /* ── Eventos ────────────────────────────────────────────────── */
 
 const view = document.getElementById('view');
+
+const shutdownButton = document.querySelector('[data-action="shutdown"]');
+if (shutdownButton) {
+  shutdownButton.addEventListener('click', shutdownServer);
+}
 
 view.addEventListener('click', event => {
   const trigger = event.target.closest('[data-action]');
