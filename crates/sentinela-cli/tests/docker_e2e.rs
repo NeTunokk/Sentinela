@@ -55,11 +55,17 @@ impl SourceContainer {
     fn wait_until_ready(&self) {
         let started = Instant::now();
         loop {
+            // `-h 127.0.0.1` força a checagem por TCP. O entrypoint oficial do
+            // postgres sobe um servidor temporário apenas no socket Unix durante
+            // a inicialização; sem `-h`, `pg_isready` responde nele e o `psql`
+            // seguinte falha quando o servidor temporário é desligado.
             let status = Command::new("docker")
                 .args([
                     "exec",
                     &self.name,
                     "pg_isready",
+                    "-h",
+                    "127.0.0.1",
                     "-U",
                     "postgres",
                     "-d",
