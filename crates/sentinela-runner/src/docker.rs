@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -32,6 +32,8 @@ const CONTAINER_BACKUP_PATH: &str = "/backup/input.dump";
 const CONTAINER_DATA_PATH: &str = "/var/lib/postgresql/data";
 const CONTAINER_PORT: &str = "5432/tcp";
 const REPORT_STDERR_LIMIT: usize = 16 * 1024;
+/// Arquivo de imagem que acompanha o pacote distribuído (ver README).
+const IMAGE_ARCHIVE_NAMES: [&str; 2] = ["postgres16.tar.gz", "postgres16.tar"];
 
 /// Especificação imutável do sandbox de uma execução.
 ///
@@ -186,16 +188,50 @@ impl DockerSession {
         Ok(())
     }
 
+    /// Garante que a imagem do PostgreSQL exista localmente.
+    ///
+    /// Ordem: imagem já carregada → arquivo que viaja junto do pacote
+    /// (`postgres16.tar.gz`) carregado com `docker load` → erro explicativo.
+    /// Nunca faz `pull`: a rede continua fora do caminho de execução.
     async fn ensure_image(&self, image: &str) -> Result<()> {
+        match self.docker.inspect_image(image).await {
+            Ok(_) => return Ok(()),
+            Err(error) if is_missing_image_error(&error) => {}
+            Err(error) => {
+                return Err(SentinelaError::Docker(format!(
+                    "não foi possível consultar a imagem '{image}' no Docker: {error}. \
+                     Verifique se o Docker está em execução e acessível pelo usuário atual."
+                )));
+            }
+        }
+
+        let Some(archive) = find_image_archive(image) else {
+            let nomes = image_archive_names(image).join(", ");
+            let pastas = image_search_dirs()
+                .iter()
+                .map(|dir| dir.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(SentinelaError::Docker(format!(
+                "imagem '{image}' não está disponível localmente e o arquivo da imagem não foi \
+                 encontrado em nenhuma destas pastas: {pastas}. Procurei por: {nomes}. \
+                 Coloque o arquivo ao lado do executável ou carregue-o manualmente com \
+                 'docker load -i <arquivo>'. O Sentinela não faz pull para garantir zero acesso \
+                 à rede."
+            )));
+        };
+
+        load_image_archive(&archive).await?;
+
         self.docker
             .inspect_image(image)
             .await
             .map(|_| ())
             .map_err(|error| {
                 SentinelaError::Docker(format!(
-                    "imagem '{image}' não está disponível localmente; o Sentinela não faz pull \
-                 para garantir zero acesso à rede. Baixe-a manualmente e tente novamente. \
-                 Detalhe: {error}"
+                    "o arquivo '{}' foi carregado, mas a imagem '{image}' continuou ausente. \
+                     Verifique se o arquivo corresponde à versão esperada. Detalhe: {error}",
+                    archive.display()
                 ))
             })
     }
@@ -892,4 +928,144 @@ async fn cleanup_orphans_with(docker: &Docker) -> Result<CleanupReport> {
     }
 
     Ok(report)
+}
+
+/* ── Imagem do PostgreSQL que viaja junto do pacote ─────────────── */
+
+/// `true` quando o Docker respondeu 404 (imagem inexistente).
+///
+/// Qualquer outro erro é infraestrutura — daemon parado, socket sem permissão —
+/// e não deve ser confundido com "falta carregar a imagem".
+fn is_missing_image_error(error: &bollard::errors::Error) -> bool {
+    matches!(
+        error,
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 404,
+            ..
+        }
+    )
+}
+
+/// Pastas onde o arquivo da imagem é procurado, na ordem de prioridade.
+///
+/// `SENTINELA_IMAGE_DIR` permite apontar para outro diretório (útil em
+/// instalações compartilhadas); por padrão, a pasta do executável e o diretório
+/// atual.
+fn image_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = std::env::var_os("SENTINELA_IMAGE_DIR") {
+        dirs.push(PathBuf::from(dir));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd);
+    }
+    dirs
+}
+
+/// Nomes aceitos para o arquivo da imagem, do mais específico ao genérico.
+fn image_archive_names(image: &str) -> Vec<String> {
+    let mut names: Vec<String> = IMAGE_ARCHIVE_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect();
+
+    let sanitized: String = image
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let sanitized = sanitized.trim_matches('-');
+    if !sanitized.is_empty() {
+        names.push(format!("{sanitized}.tar.gz"));
+        names.push(format!("{sanitized}.tar"));
+    }
+    names
+}
+
+/// Localiza o arquivo da imagem; `SENTINELA_IMAGE_FILE` tem prioridade.
+fn find_image_archive(image: &str) -> Option<PathBuf> {
+    if let Some(file) = std::env::var_os("SENTINELA_IMAGE_FILE") {
+        let path = PathBuf::from(file);
+        return path.is_file().then_some(path);
+    }
+
+    let names = image_archive_names(image);
+    for dir in image_search_dirs() {
+        for name in &names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Carrega o arquivo de imagem com `docker load -i`.
+///
+/// Usa a CLI porque a API de load não está disponível no cliente Docker usado
+/// pelo projeto, e porque a CLI descomprime `.tar.gz` sozinha.
+async fn load_image_archive(archive: &Path) -> Result<()> {
+    let archive = archive.to_path_buf();
+    let caminho = archive.display().to_string();
+    info!(arquivo = %caminho, "imagem ausente; carregando do pacote (docker load)");
+
+    let output = tokio::task::spawn_blocking(move || {
+        let program = std::env::var("SENTINELA_DOCKER").unwrap_or_else(|_| "docker".to_string());
+        std::process::Command::new(program)
+            .arg("load")
+            .arg("-i")
+            .arg(&archive)
+            .output()
+    })
+    .await
+    .map_err(|error| SentinelaError::Docker(format!("falha ao aguardar o 'docker load': {error}")))?
+    .map_err(|error| {
+        SentinelaError::Docker(format!(
+            "não foi possível executar 'docker load -i {caminho}': {error}. \
+             Instale o Docker CLI ou carregue a imagem manualmente com \
+             'docker load -i {caminho}'."
+        ))
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr: String = stderr.trim().chars().take(2000).collect();
+        let detail = if stderr.is_empty() {
+            "sem detalhes".to_string()
+        } else {
+            stderr
+        };
+        return Err(SentinelaError::Docker(format!(
+            "'docker load -i {caminho}' falhou: {detail}"
+        )));
+    }
+
+    info!(arquivo = %caminho, "imagem carregada");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nomes_cobrem_o_arquivo_do_pacote() {
+        let names = image_archive_names("postgres:16");
+        assert_eq!(names[0], "postgres16.tar.gz");
+        assert_eq!(names[1], "postgres16.tar");
+        assert!(names.contains(&"postgres-16.tar.gz".to_string()));
+        assert!(names.contains(&"postgres-16.tar".to_string()));
+    }
+
+    #[test]
+    fn nome_generico_nao_fica_com_barras() {
+        let names = image_archive_names("registry.local:5000/library/postgres:16");
+        assert!(names.iter().all(|name| !name.contains('/')));
+        assert!(names.contains(&"registry-local-5000-library-postgres-16.tar.gz".to_string()));
+    }
 }
