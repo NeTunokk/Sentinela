@@ -150,8 +150,9 @@ pub struct DockerSession {
 impl DockerSession {
     pub fn connect(run_id: &str) -> Result<Self> {
         let docker = Docker::connect_with_local_defaults().map_err(|error| {
-            SentinelaError::Docker(format!(
-                "não foi possível conectar ao Docker local: {error}"
+            SentinelaError::Docker(docker_message(
+                "não foi possível conectar ao Docker local",
+                &error,
             ))
         })?;
         let safe_run_id = run_id
@@ -255,9 +256,9 @@ impl DockerSession {
             .await
             .map(|_| ())
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao criar rede interna '{}': {error}",
-                    self.network_name
+                SentinelaError::Docker(docker_message(
+                    &format!("falha ao criar rede interna '{}'", self.network_name),
+                    &error,
                 ))
             })
     }
@@ -326,9 +327,9 @@ impl DockerSession {
             .await
             .map(|_| ())
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao criar container '{}': {error}",
-                    self.container_name
+                SentinelaError::Docker(docker_message(
+                    &format!("falha ao criar container '{}'", self.container_name),
+                    &error,
                 ))
             })
     }
@@ -338,9 +339,9 @@ impl DockerSession {
             .start_container(&self.container_name, None::<StartContainerOptions>)
             .await
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao iniciar container '{}': {error}",
-                    self.container_name
+                SentinelaError::Docker(docker_message(
+                    &format!("falha ao iniciar container '{}'", self.container_name),
+                    &error,
                 ))
             })
     }
@@ -550,14 +551,14 @@ impl DockerSession {
             .inspect_container(&self.container_name, None)
             .await
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao inspecionar container '{}': {error}",
-                    self.container_name
+                SentinelaError::Docker(docker_message(
+                    &format!("falha ao inspecionar container '{}'", self.container_name),
+                    &error,
                 ))
             })?;
         extract_container_ip(&inspect, &self.network_name).ok_or_else(|| {
             SentinelaError::Docker(format!(
-                "container '{}' não recebeu um endereço na rede '{}' para a porta {}",
+                "container '{}' não recebeu um endereço IP na rede interna '{}' (porta {})",
                 self.container_name, self.network_name, CONTAINER_PORT
             ))
         })
@@ -577,10 +578,13 @@ impl DockerSession {
             .create_exec(&self.container_name, options)
             .await
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao criar exec '{}' no container '{}': {error}",
-                    command.first().map_or("?", String::as_str),
-                    self.container_name
+                SentinelaError::Docker(docker_message(
+                    &format!(
+                        "falha ao criar exec '{}' no container '{}'",
+                        command.first().map_or("?", String::as_str),
+                        self.container_name
+                    ),
+                    &error,
                 ))
             })?;
 
@@ -589,10 +593,13 @@ impl DockerSession {
             .start_exec(&created.id, None::<StartExecOptions>)
             .await
             .map_err(|error| {
-                SentinelaError::Docker(format!(
-                    "falha ao executar '{}' no container '{}': {error}",
-                    command.first().map_or("?", String::as_str),
-                    self.container_name
+                SentinelaError::Docker(docker_message(
+                    &format!(
+                        "falha ao executar '{}' no container '{}'",
+                        command.first().map_or("?", String::as_str),
+                        self.container_name
+                    ),
+                    &error,
                 ))
             })?;
 
@@ -604,9 +611,12 @@ impl DockerSession {
                 let mut stream = output;
                 while let Some(item) = stream.next().await {
                     let item = item.map_err(|error| {
-                        SentinelaError::Docker(format!(
-                            "falha ao ler saída de '{}': {error}",
-                            command.first().map_or("?", String::as_str)
+                        SentinelaError::Docker(docker_message(
+                            &format!(
+                                "falha ao ler saída de '{}'",
+                                command.first().map_or("?", String::as_str)
+                            ),
+                            &error,
                         ))
                     })?;
                     match item {
@@ -634,7 +644,10 @@ impl DockerSession {
     async fn inspect_exit_code(&self, exec_id: &str) -> Result<Option<i32>> {
         for _ in 0..40 {
             let inspect = self.docker.inspect_exec(exec_id).await.map_err(|error| {
-                SentinelaError::Docker(format!("falha ao inspecionar exec {exec_id}: {error}"))
+                SentinelaError::Docker(docker_message(
+                    &format!("falha ao inspecionar exec {exec_id}"),
+                    &error,
+                ))
             })?;
             if inspect.running == Some(false) {
                 return Ok(inspect.exit_code.and_then(|code| i32::try_from(code).ok()));
@@ -672,7 +685,7 @@ impl DockerSession {
                 } else {
                     warn!(container = %self.container_name, error = %error, "falha ao remover container");
                     first_error.get_or_insert_with(|| {
-                        SentinelaError::Docker(format!("falha ao remover container: {error}"))
+                        SentinelaError::Docker(docker_message("falha ao remover container", &error))
                     });
                 }
             }
@@ -686,7 +699,7 @@ impl DockerSession {
                 } else {
                     warn!(network = %self.network_name, error = %error, "falha ao remover rede");
                     first_error.get_or_insert_with(|| {
-                        SentinelaError::Docker(format!("falha ao remover rede: {error}"))
+                        SentinelaError::Docker(docker_message("falha ao remover rede", &error))
                     });
                 }
             }
@@ -760,16 +773,67 @@ fn is_not_found(error: &bollard::errors::Error) -> bool {
     )
 }
 
-fn docker_error(error: bollard::errors::Error) -> String {
-    error.to_string()
+const DOCKER_STOPPED_HINT: &str =
+    " Docker não está em execução ou DOCKER_HOST está inalcançável; verifique com `docker info` \
+     e inicie o daemon.";
+const DOCKER_PERMISSION_HINT: &str =
+    " Sem permissão no Docker; rode `docker info` para confirmar e adicione o usuário ao grupo \
+     'docker' (reabra a sessão depois). Em WSL, confirme o acesso a /var/run/docker.sock.";
+const DOCKER_TIMEOUT_HINT: &str =
+    " O Docker demorou para responder; verifique `docker info` e os recursos da máquina.";
+
+fn docker_message(context: &str, error: &bollard::errors::Error) -> String {
+    docker_message_with_hint(context, error, "")
+}
+
+fn docker_message_with_hint(
+    context: &str,
+    error: &bollard::errors::Error,
+    extra_hint: &str,
+) -> String {
+    let mut message = format!("{context}: {error}");
+    let hint = match error {
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 403, ..
+        } => DOCKER_PERMISSION_HINT,
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        } => " Recurso Docker não encontrado; confira o nome informado.",
+        bollard::errors::Error::IOError { err }
+            if err.kind() == std::io::ErrorKind::PermissionDenied =>
+        {
+            DOCKER_PERMISSION_HINT
+        }
+        bollard::errors::Error::IOError { err }
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            DOCKER_STOPPED_HINT
+        }
+        bollard::errors::Error::RequestTimeoutError => DOCKER_TIMEOUT_HINT,
+        _ => "",
+    };
+    message.push_str(hint);
+    if !extra_hint.is_empty() {
+        message.push(' ');
+        message.push_str(extra_hint);
+    }
+    message
 }
 
 /// Lista containers, redes e volumes com `label=sentinela=true` sem remover
 /// nada. O painel usa esta listagem antes de pedir confirmação de limpeza.
 pub async fn list_orphans() -> Result<Vec<OrphanResource>> {
     let docker = Docker::connect_with_local_defaults().map_err(|error| {
-        SentinelaError::Docker(format!(
-            "não foi possível conectar ao Docker local: {error}"
+        SentinelaError::Docker(docker_message(
+            "não foi possível conectar ao Docker local",
+            &error,
         ))
     })?;
     list_orphans_with(&docker).await
@@ -789,7 +853,7 @@ async fn list_orphans_with(docker: &Docker) -> Result<Vec<OrphanResource>> {
         ))
         .await
         .map_err(|error| {
-            SentinelaError::Docker(format!("falha ao listar containers órfãos: {error}"))
+            SentinelaError::Docker(docker_message("falha ao listar containers órfãos", &error))
         })?;
     for container in containers {
         let labels = container.labels.as_ref();
@@ -813,7 +877,9 @@ async fn list_orphans_with(docker: &Docker) -> Result<Vec<OrphanResource>> {
             ListNetworksOptionsBuilder::new().filters(&filters).build(),
         ))
         .await
-        .map_err(|error| SentinelaError::Docker(format!("falha ao listar redes órfãs: {error}")))?;
+        .map_err(|error| {
+            SentinelaError::Docker(docker_message("falha ao listar redes órfãs", &error))
+        })?;
     for network in networks {
         let Some(name) = network.name else { continue };
         let labels = network.labels.as_ref();
@@ -831,7 +897,7 @@ async fn list_orphans_with(docker: &Docker) -> Result<Vec<OrphanResource>> {
         ))
         .await
         .map_err(|error| {
-            SentinelaError::Docker(format!("falha ao listar volumes órfãos: {error}"))
+            SentinelaError::Docker(docker_message("falha ao listar volumes órfãos", &error))
         })?;
     for volume in volumes.volumes.unwrap_or_default() {
         let labels = Some(&volume.labels);
@@ -854,8 +920,9 @@ fn label<'a>(labels: Option<&'a HashMap<String, String>>, key: &str) -> Option<&
 /// `label=sentinela=true`.
 pub async fn cleanup_orphans() -> Result<CleanupReport> {
     let docker = Docker::connect_with_local_defaults().map_err(|error| {
-        SentinelaError::Docker(format!(
-            "não foi possível conectar ao Docker local: {error}"
+        SentinelaError::Docker(docker_message(
+            "não foi possível conectar ao Docker local",
+            &error,
         ))
     })?;
     cleanup_orphans_with(&docker).await
@@ -875,7 +942,7 @@ async fn cleanup_orphans_with(docker: &Docker) -> Result<CleanupReport> {
         ))
         .await
         .map_err(|error| {
-            SentinelaError::Docker(format!("falha ao listar containers órfãos: {error}"))
+            SentinelaError::Docker(docker_message("falha ao listar containers órfãos", &error))
         })?;
     for container in containers {
         let Some(id) = container.id else { continue };
@@ -887,7 +954,7 @@ async fn cleanup_orphans_with(docker: &Docker) -> Result<CleanupReport> {
             Ok(()) => report.containers_removed += 1,
             Err(error) => report
                 .errors
-                .push(format!("container {id}: {}", docker_error(error))),
+                .push(docker_message(&format!("container {id}"), &error)),
         }
     }
 
@@ -896,14 +963,16 @@ async fn cleanup_orphans_with(docker: &Docker) -> Result<CleanupReport> {
             ListNetworksOptionsBuilder::new().filters(&filters).build(),
         ))
         .await
-        .map_err(|error| SentinelaError::Docker(format!("falha ao listar redes órfãs: {error}")))?;
+        .map_err(|error| {
+            SentinelaError::Docker(docker_message("falha ao listar redes órfãs", &error))
+        })?;
     for network in networks {
         let Some(name) = network.name else { continue };
         match docker.remove_network(&name).await {
             Ok(()) => report.networks_removed += 1,
             Err(error) => report
                 .errors
-                .push(format!("rede {name}: {}", docker_error(error))),
+                .push(docker_message(&format!("rede {name}"), &error)),
         }
     }
 
@@ -913,159 +982,75 @@ async fn cleanup_orphans_with(docker: &Docker) -> Result<CleanupReport> {
         ))
         .await
         .map_err(|error| {
-            SentinelaError::Docker(format!("falha ao listar volumes órfãos: {error}"))
+            SentinelaError::Docker(docker_message("falha ao listar volumes órfãos", &error))
         })?;
     for volume in volumes.volumes.unwrap_or_default() {
         let options = RemoveVolumeOptionsBuilder::new().force(true).build();
         match docker.remove_volume(&volume.name, Some(options)).await {
             Ok(()) => report.volumes_removed += 1,
-            Err(error) => {
-                report
-                    .errors
-                    .push(format!("volume {}: {}", volume.name, docker_error(error)))
-            }
+            Err(error) => report
+                .errors
+                .push(docker_message(&format!("volume {}", volume.name), &error)),
         }
     }
 
     Ok(report)
 }
 
-/* ── Imagem do PostgreSQL que viaja junto do pacote ─────────────── */
-
-/// `true` quando o Docker respondeu 404 (imagem inexistente).
-///
-/// Qualquer outro erro é infraestrutura — daemon parado, socket sem permissão —
-/// e não deve ser confundido com "falta carregar a imagem".
-fn is_missing_image_error(error: &bollard::errors::Error) -> bool {
-    matches!(
-        error,
-        bollard::errors::Error::DockerResponseServerError {
-            status_code: 404,
-            ..
-        }
-    )
-}
-
-/// Pastas onde o arquivo da imagem é procurado, na ordem de prioridade.
-///
-/// `SENTINELA_IMAGE_DIR` permite apontar para outro diretório (útil em
-/// instalações compartilhadas); por padrão, a pasta do executável e o diretório
-/// atual.
-fn image_search_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(dir) = std::env::var_os("SENTINELA_IMAGE_DIR") {
-        dirs.push(PathBuf::from(dir));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            dirs.push(parent.to_path_buf());
-        }
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        dirs.push(cwd);
-    }
-    dirs
-}
-
-/// Nomes aceitos para o arquivo da imagem, do mais específico ao genérico.
-fn image_archive_names(image: &str) -> Vec<String> {
-    let mut names: Vec<String> = IMAGE_ARCHIVE_NAMES
-        .iter()
-        .map(|name| (*name).to_string())
-        .collect();
-
-    let sanitized: String = image
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    let sanitized = sanitized.trim_matches('-');
-    if !sanitized.is_empty() {
-        names.push(format!("{sanitized}.tar.gz"));
-        names.push(format!("{sanitized}.tar"));
-    }
-    names
-}
-
-/// Localiza o arquivo da imagem; `SENTINELA_IMAGE_FILE` tem prioridade.
-fn find_image_archive(image: &str) -> Option<PathBuf> {
-    if let Some(file) = std::env::var_os("SENTINELA_IMAGE_FILE") {
-        let path = PathBuf::from(file);
-        return path.is_file().then_some(path);
-    }
-
-    let names = image_archive_names(image);
-    for dir in image_search_dirs() {
-        for name in &names {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-/// Carrega o arquivo de imagem com `docker load -i`.
-///
-/// Usa a CLI porque a API de load não está disponível no cliente Docker usado
-/// pelo projeto, e porque a CLI descomprime `.tar.gz` sozinha.
-async fn load_image_archive(archive: &Path) -> Result<()> {
-    let archive = archive.to_path_buf();
-    let caminho = archive.display().to_string();
-    info!(arquivo = %caminho, "imagem ausente; carregando do pacote (docker load)");
-
-    let output = tokio::task::spawn_blocking(move || {
-        let program = std::env::var("SENTINELA_DOCKER").unwrap_or_else(|_| "docker".to_string());
-        std::process::Command::new(program)
-            .arg("load")
-            .arg("-i")
-            .arg(&archive)
-            .output()
-    })
-    .await
-    .map_err(|error| SentinelaError::Docker(format!("falha ao aguardar o 'docker load': {error}")))?
-    .map_err(|error| {
-        SentinelaError::Docker(format!(
-            "não foi possível executar 'docker load -i {caminho}': {error}. \
-             Instale o Docker CLI ou carregue a imagem manualmente com \
-             'docker load -i {caminho}'."
-        ))
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr: String = stderr.trim().chars().take(2000).collect();
-        let detail = if stderr.is_empty() {
-            "sem detalhes".to_string()
-        } else {
-            stderr
-        };
-        return Err(SentinelaError::Docker(format!(
-            "'docker load -i {caminho}' falhou: {detail}"
-        )));
-    }
-
-    info!(arquivo = %caminho, "imagem carregada");
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bollard::errors::Error as BollardError;
+    use std::io::{Error as IoError, ErrorKind};
 
     #[test]
-    fn nomes_cobrem_o_arquivo_do_pacote() {
-        let names = image_archive_names("postgres:16");
-        assert_eq!(names[0], "postgres16.tar.gz");
-        assert_eq!(names[1], "postgres16.tar");
-        assert!(names.contains(&"postgres-16.tar.gz".to_string()));
-        assert!(names.contains(&"postgres-16.tar".to_string()));
+    fn docker_message_suggests_starting_the_daemon() {
+        let error = BollardError::IOError {
+            err: IoError::new(ErrorKind::NotFound, "No such file or directory"),
+        };
+
+        let message = docker_message("conectar ao Docker", &error);
+
+        assert!(message.contains("docker info"), "{message}");
+        assert!(message.contains("inicie o daemon"), "{message}");
     }
 
     #[test]
-    fn nome_generico_nao_fica_com_barras() {
-        let names = image_archive_names("registry.local:5000/library/postgres:16");
-        assert!(names.iter().all(|name| !name.contains('/')));
-        assert!(names.contains(&"registry-local-5000-library-postgres-16.tar.gz".to_string()));
+    fn docker_message_suggests_fixing_permissions() {
+        let error = BollardError::IOError {
+            err: IoError::new(ErrorKind::PermissionDenied, "permission denied"),
+        };
+
+        let message = docker_message("listar containers", &error);
+
+        assert!(message.contains("Sem permissão"), "{message}");
+        assert!(message.contains("grupo 'docker'"), "{message}");
+    }
+
+    #[test]
+    fn docker_message_suggests_pull_for_missing_image() {
+        let error = BollardError::DockerResponseServerError {
+            status_code: 404,
+            message: "No such image: postgres:16".to_string(),
+        };
+
+        let message = docker_message_with_hint(
+            "imagem 'postgres:16' não está disponível localmente",
+            &error,
+            "Execute `docker pull postgres:16` e tente novamente.",
+        );
+
+        assert!(
+            message.contains("Recurso Docker não encontrado"),
+            "{message}"
+        );
+        assert!(message.contains("docker pull postgres:16"), "{message}");
+    }
+
+    #[test]
+    fn docker_message_suggests_checking_timeouts() {
+        let message = docker_message("inspecionar container", &BollardError::RequestTimeoutError);
+
+        assert!(message.contains("demorou para responder"), "{message}");
     }
 }
