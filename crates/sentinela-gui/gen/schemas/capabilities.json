@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Permissões mínimas: IPC local e eventos de progresso; nenhuma rede, sistema de arquivos ou shell.","local":true,"windows":["main"],"permissions":["core:event:allow-listen"]}}

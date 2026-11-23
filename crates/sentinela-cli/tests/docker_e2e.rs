@@ -54,11 +54,18 @@ impl SourceContainer {
 
     fn wait_until_ready(&self) {
         let started = Instant::now();
+        let mut ready_streak = 0_u8;
         loop {
+<<<<<<< HEAD
             // `-h 127.0.0.1` força a checagem por TCP. O entrypoint oficial do
             // postgres sobe um servidor temporário apenas no socket Unix durante
             // a inicialização; sem `-h`, `pg_isready` responde nele e o `psql`
             // seguinte falha quando o servidor temporário é desligado.
+=======
+            // O entrypoint oficial aceita conexões no socket Unix durante a
+            // inicialização temporária e depois desliga esse servidor. Exigir
+            // TCP (127.0.0.1) e duas checagens consecutivas evita a corrida.
+>>>>>>> 1de33ca (test(e2e): aguardar PostgreSQL definitivo antes de criar tabela)
             let status = Command::new("docker")
                 .args([
                     "exec",
@@ -74,11 +81,16 @@ impl SourceContainer {
                 .status()
                 .expect("falha ao executar pg_isready");
             if status.success() {
-                return;
+                ready_streak += 1;
+                if ready_streak >= 2 {
+                    return;
+                }
+            } else {
+                ready_streak = 0;
             }
             assert!(
                 started.elapsed() < READINESS_TIMEOUT,
-                "timeout aguardando o PostgreSQL de origem"
+                "timeout aguardando o PostgreSQL de origem aceitar conexões TCP"
             );
             thread::sleep(Duration::from_millis(500));
         }
