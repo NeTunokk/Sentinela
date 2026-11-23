@@ -1,4 +1,5 @@
 mod api;
+mod pwa;
 mod web;
 
 use std::collections::HashMap;
@@ -47,6 +48,8 @@ pub(crate) enum ActiveRunState {
 struct Options {
     port: u16,
     open_browser: bool,
+    /// Prefere abrir o painel no aplicativo instalado (PWA) antes do navegador.
+    prefer_app: bool,
 }
 
 #[tokio::main]
@@ -60,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let url = panel_url(options.port);
         println!("Sentinela já está em execução em {url}");
         if options.open_browser {
-            open_browser(&url);
+            open_panel(&url, options.port, options.prefer_app);
         }
         return Ok(());
     }
@@ -104,6 +107,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/styles.css", get(web::styles))
         .route("/app.js", get(web::script))
         .route("/assets/sentinela-logo.png", get(web::logo))
+        .route("/assets/icon-192.png", get(web::icon_192))
+        .route("/assets/icon-512.png", get(web::icon_512))
+        .route("/manifest.webmanifest", get(web::manifest))
+        .route("/sw.js", get(web::service_worker))
         .route("/assets/inter-latin.woff2", get(web::font))
         .merge(api)
         .with_state(state);
@@ -126,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Use o botão \"Encerrar servidor\" no painel para desligar, ou Ctrl+C.");
 
     if options.open_browser {
-        open_browser(&url);
+        open_panel(&url, options.port, options.prefer_app);
     }
 
     let shutdown_signal = shutdown.clone();
@@ -170,6 +177,22 @@ async fn panel_is_running(port: u16) -> bool {
     String::from_utf8_lossy(&response).contains("<title>Sentinela</title>")
 }
 
+/// Abre o painel no aplicativo instalado (PWA) quando existir; caso contrário,
+/// abre no navegador padrão.
+fn open_panel(url: &str, port: u16, prefer_app: bool) {
+    if prefer_app {
+        if pwa::open_installed(port) {
+            println!("Sentinela — painel aberto no aplicativo instalado.");
+            return;
+        }
+        if pwa::open_app_window(url) {
+            println!("Sentinela — painel aberto em janela de aplicativo.");
+            return;
+        }
+    }
+    open_browser(url);
+}
+
 /// Abre o painel no navegador padrão sem depender de nenhuma biblioteca extra.
 fn open_browser(url: &str) {
     let result = if cfg!(target_os = "windows") {
@@ -177,6 +200,15 @@ fn open_browser(url: &str) {
         Command::new("cmd").args(["/C", "start", "", url]).spawn()
     } else if cfg!(target_os = "macos") {
         Command::new("open").arg(url).spawn()
+    } else if pwa::running_in_wsl() {
+        // No WSL, quem tem navegador é o Windows. `explorer.exe <url>` abre no
+        // navegador padrão e não depende do argumento vazio de `start`.
+        let mut command = Command::new("explorer.exe");
+        command.arg(url);
+        if std::path::Path::new("/mnt/c/Windows").is_dir() {
+            command.current_dir("/mnt/c/Windows");
+        }
+        command.spawn()
     } else {
         Command::new("xdg-open").arg(url).spawn()
     };
@@ -206,6 +238,7 @@ fn new_token() -> String {
 fn parse_options() -> Options {
     let mut port = 8787;
     let mut open_browser = true;
+    let mut prefer_app = true;
     let mut args = std::env::args().skip(1);
 
     while let Some(argument) = args.next() {
@@ -218,15 +251,23 @@ fn parse_options() -> Options {
                 }
             }
             "--no-open" => open_browser = false,
+            "--browser" => prefer_app = false,
             "--help" | "-h" => {
-                println!("sentinela-server [--port <porta>] [--no-open]");
+                println!("sentinela-server [--port <porta>] [--no-open] [--browser]");
                 println!("Serve o painel local em 127.0.0.1 (padrão: 8787).");
-                println!("Abre o navegador automaticamente; --no-open desativa.");
+                println!(
+                    "Abre o painel no aplicativo instalado (PWA) ou em uma janela de aplicativo."
+                );
+                println!("--browser força o navegador padrão; --no-open não abre nada.");
                 std::process::exit(0);
             }
             _ => {}
         }
     }
 
-    Options { port, open_browser }
+    Options {
+        port,
+        open_browser,
+        prefer_app,
+    }
 }

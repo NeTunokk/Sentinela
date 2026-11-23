@@ -7,7 +7,11 @@ use crate::AppState;
 const INDEX: &str = include_str!("../web/index.html");
 const STYLES: &str = include_str!("../web/styles.css");
 const SCRIPT: &str = include_str!("../web/app.js");
+const MANIFEST: &str = include_str!("../web/manifest.webmanifest");
+const SERVICE_WORKER: &str = include_str!("../web/sw.js");
 const LOGO: &[u8] = include_bytes!("../web/assets/sentinela-logo.png");
+const ICON_192: &[u8] = include_bytes!("../web/assets/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../web/assets/icon-512.png");
 const FONT: &[u8] = include_bytes!("../web/assets/inter-latin.woff2");
 
 pub(crate) async fn index(State(state): State<AppState>) -> Response {
@@ -25,6 +29,24 @@ pub(crate) async fn script() -> Response {
 
 pub(crate) async fn logo() -> Response {
     bytes_response(LOGO, "image/png")
+}
+
+/// Manifesto que permite instalar o painel como aplicativo (PWA).
+pub(crate) async fn manifest() -> Response {
+    text_response(MANIFEST.to_string(), "application/manifest+json")
+}
+
+/// Service worker mínimo; sem cache para não servir HTML com token velho.
+pub(crate) async fn service_worker() -> Response {
+    text_response(SERVICE_WORKER.to_string(), "text/javascript; charset=utf-8")
+}
+
+pub(crate) async fn icon_192() -> Response {
+    bytes_response(ICON_192, "image/png")
+}
+
+pub(crate) async fn icon_512() -> Response {
+    bytes_response(ICON_512, "image/png")
 }
 
 pub(crate) async fn font() -> Response {

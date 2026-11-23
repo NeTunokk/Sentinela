@@ -142,6 +142,26 @@ input:focus-visible {
 
 .shutdown-icon { font-size: 15px; line-height: 1; }
 
+.install {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  color: var(--gold);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+.install:hover { background: #2B2209; color: var(--gold-hover); }
+.install[hidden] { display: none; }
+
 /* ── Tela de encerramento ─────────────────────────────────────── */
 
 .shutdown-screen {
@@ -568,6 +588,7 @@ tbody tr:hover { background: #1B1508; }
   .brand img { width: 110px; }
   .nv { min-height: 40px; padding: 8px 10px; white-space: nowrap; }
   .side-foot { display: none; }
+  .install { display: none; }
 
   .main {
     flex: 1 1 100%;
