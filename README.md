@@ -400,6 +400,35 @@ Para cada `run`, o Sentinela:
 No início de cada execução (sem `--keep`), recursos órfãos com
 `label=sentinela=true` são removidos.
 
+### conectividade e diagnóstico
+
+A rota usada pelos testes é o IP do container na rede `internal`: nenhuma
+porta é publicada no host. Isso foi verificado em Docker 29.9.3 com um container
+de probe (`Ports={"5432/tcp":null}`): o host conectou em `172.18.0.2:5432`
+enquanto a rede permanecia `Internal=true`, sem saída para a internet.
+
+Se o firewall ou uma configuração de WSL bloquear essa rota, o diagnóstico pode
+ser feito sem publicar portas, usando `docker exec` no container de uma execução
+com `--keep`:
+
+```bash
+docker exec sentinela-run-<run_id> pg_isready -U postgres -d sentinela
+docker exec sentinela-run-<run_id> psql -U postgres -d sentinela -tAc 'SELECT 1'
+```
+
+O fluxo normal continua usando o IP do container; `docker exec` serve apenas
+para provar que o PostgreSQL está pronto sem alterar o isolamento.
+
+## Solução de problemas
+
+| Mensagem | O que fazer |
+| --- | --- |
+| `Docker não está em execução ou DOCKER_HOST está inalcançável` | Rode `docker info`, inicie o daemon e tente de novo. |
+| `Sem permissão no Docker` | Rode `docker info` para confirmar; adicione o usuário ao grupo `docker` e reabra a sessão. No WSL, verifique o acesso a `/var/run/docker.sock`. |
+| `imagem 'postgres:16' não está disponível localmente` | Execute `docker pull postgres:16`. O Sentinela não faz pull para não depender de rede em tempo de execução. |
+| `ambiente '<nome>' não configurado` | Execute `sentinela env add <nome> --backup-dir <dir>` ou ajuste `SENTINELA_CONFIG_DIR`. |
+| `command not found: sentinela` (ou similar) | Instale com `cargo install --path crates/sentinela-cli` e coloque `~/.cargo/bin` no `PATH`, conforme [Instalar o comando `sentinela`](#instalar-o-comando-sentinela). |
+
 ## Relatórios e integridade
 
 Cada run grava, em `reports/`:
