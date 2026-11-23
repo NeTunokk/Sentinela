@@ -102,6 +102,42 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+## Instalar o comando `sentinela`
+
+`cargo build --release` gera `./target/release/sentinela`, mas o terminal só
+reconhece `sentinela ...` se o executável estiver no `PATH`. Instale-o no
+diretório de binários do Cargo:
+
+```bash
+cargo install --path crates/sentinela-cli
+command -v sentinela   # precisa imprimir algo como /home/voce/.cargo/bin/sentinela
+sentinela --version
+```
+
+O `cargo install` usa `$CARGO_HOME/bin` (por padrão `~/.cargo/bin`). Esse
+diretório precisa estar no `PATH` do shell. Adicione uma das linhas abaixo ao
+arquivo de inicialização correspondente e reabra o terminal:
+
+```bash
+# bash — ~/.bashrc
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+```bash
+# zsh — ~/.zshrc
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+```fish
+# fish — ~/.config/fish/config.fish
+fish_add_path $HOME/.cargo/bin
+```
+
+Se você personalizou `CARGO_HOME`, use `"$CARGO_HOME/bin"` no lugar de
+`"$HOME/.cargo/bin"`. Depois de reabrir o terminal, confirme com
+`command -v sentinela` e `sentinela --help`. Em WSL, o `PATH` do Linux e o do
+Windows são separados: instale e configure o binário dentro do WSL.
+
 ## Painel web local
 
 O binário `sentinela-server` serve um painel navegável (Execuções, Relatório,
@@ -152,7 +188,14 @@ compilar. A imagem do PostgreSQL 16 acompanha o pacote.
 
 ## Início rápido
 
+<<<<<<< HEAD
 1. Garanta a imagem do PostgreSQL 16 no Docker (uma vez só):
+=======
+Antes de executar os comandos abaixo, instale o binário e confirme que ele está
+no `PATH` conforme [Instalar o comando `sentinela`](#instalar-o-comando-sentinela).
+
+1. Baixe a imagem que será usada no sandbox:
+>>>>>>> 4dbb773 (docs(cli): documentar cargo install e PATH do ~/.cargo/bin)
 
    ```bash
    ./scripts/preparar-imagem.sh   # gera postgres16.tar.gz e carrega no Docker
@@ -409,9 +452,10 @@ verificação de integridade.
 Se você quer validar o fluxo sem o teste automatizado:
 
 ```bash
-# 1. Build
+# 1. Build e instalação no PATH
 cargo build --release
-export PATH="$PWD/target/release:$PATH"
+cargo install --path crates/sentinela-cli
+command -v sentinela
 
 # 2. Imagem local (o Sentinela não faz pull; usa postgres16.tar[.gz] se existir)
 ./scripts/preparar-imagem.sh
