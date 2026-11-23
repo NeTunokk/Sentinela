@@ -13,6 +13,6 @@ pub use docker::{
     RunExecution, SandboxSpec,
 };
 pub use execution::{
-    execute_run, CancellationToken, ProgressSender, RunOutcome, RunProgress, RunRequest,
+    execute_run, CancellationToken, ProgressSender, RunOutcome, RunPhase, RunProgress, RunRequest,
 };
 pub use sql_tests::run_sql_tests;

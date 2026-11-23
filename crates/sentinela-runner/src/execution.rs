@@ -22,17 +22,44 @@ use tracing::{info, warn};
 use crate::{cleanup_orphans, DockerSession, RunExecution, SandboxSpec};
 
 /// Fase de uma execução, enviada como evento para a interface.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(tag = "phase", rename_all = "snake_case")]
-pub enum RunProgress {
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RunPhase {
     Discovery,
-    BackupSelected { backup_id: String },
+    BackupSelected,
     Startup,
     Restore,
     Tests,
     Report,
-    Finished { status: RunStatus },
-    Failed { message: String },
+    Finished,
+    Failed,
+}
+
+/// Evento de progresso: nunca contém linhas de dados nem caminhos do cliente.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RunProgress {
+    pub run_id: String,
+    pub phase: RunPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl RunProgress {
+    fn new(run_id: &str, phase: RunPhase) -> Self {
+        Self {
+            run_id: run_id.to_string(),
+            phase,
+            detail: None,
+        }
+    }
+
+    fn with_detail(run_id: &str, phase: RunPhase, detail: impl Into<String>) -> Self {
+        Self {
+            run_id: run_id.to_string(),
+            phase,
+            detail: Some(detail.into()),
+        }
+    }
 }
 
 /// Canal de progresso usado pelos comandos da interface.
@@ -133,12 +160,10 @@ fn check_cancelled(cancel: &CancellationToken) -> Result<()> {
     }
 }
 
-fn report_failure(progress: &Option<ProgressSender>, error: &SentinelaError) {
+fn report_failure(progress: &Option<ProgressSender>, run_id: &str, error: &SentinelaError) {
     emit(
         progress,
-        RunProgress::Failed {
-            message: error.to_string(),
-        },
+        RunProgress::with_detail(run_id, RunPhase::Failed, error.to_string()),
     );
 }
 
@@ -150,8 +175,8 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
     let cancel = request.cancel;
     let progress = request.progress;
 
-    emit(&progress, RunProgress::Discovery);
-    check_cancelled(&cancel).inspect_err(|error| report_failure(&progress, error))?;
+    emit(&progress, RunProgress::new(&run_id, RunPhase::Discovery));
+    check_cancelled(&cancel).inspect_err(|error| report_failure(&progress, &run_id, error))?;
 
     validate_env_name(&environment)?;
     let started_at = Utc::now();
@@ -180,11 +205,9 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
     );
     emit(
         &progress,
-        RunProgress::BackupSelected {
-            backup_id: backup.id.clone(),
-        },
+        RunProgress::with_detail(&run_id, RunPhase::BackupSelected, backup.id.clone()),
     );
-    check_cancelled(&cancel).inspect_err(|error| report_failure(&progress, error))?;
+    check_cancelled(&cancel).inspect_err(|error| report_failure(&progress, &run_id, error))?;
 
     let spec = SandboxSpec::from_environment(&config, run_id.clone(), backup.path.clone());
 
@@ -216,7 +239,7 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
         ..TimingsReport::default()
     };
 
-    emit(&progress, RunProgress::Startup);
+    emit(&progress, RunProgress::new(&run_id, RunPhase::Startup));
     let execution: Result<RunExecution> = async {
         let startup_started = Instant::now();
         let prepared = guarded(&cancel, session.prepare(&spec)).await;
@@ -224,10 +247,10 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
         prepared?;
         check_cancelled(&cancel)?;
 
-        emit(&progress, RunProgress::Restore);
+        emit(&progress, RunProgress::new(&run_id, RunPhase::Restore));
         let restore = guarded(&cancel, session.execute_restore(&spec)).await?;
         if restore.list_ok && restore.exit_code == Some(0) {
-            emit(&progress, RunProgress::Tests);
+            emit(&progress, RunProgress::new(&run_id, RunPhase::Tests));
         }
         guarded(
             &cancel,
@@ -239,7 +262,7 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
 
     if matches!(execution, Err(SentinelaError::Interrupted)) {
         session.mark_cleaned();
-        report_failure(&progress, &SentinelaError::Interrupted);
+        report_failure(&progress, &run_id, &SentinelaError::Interrupted);
         return Err(SentinelaError::Interrupted);
     }
 
@@ -304,7 +327,7 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
         error,
     };
 
-    emit(&progress, RunProgress::Report);
+    emit(&progress, RunProgress::new(&run_id, RunPhase::Report));
     let signer = ReportSigner::load_or_create(&paths)?;
     let artifacts = write_reports(&paths, &report, &signer)?;
 
@@ -313,9 +336,7 @@ pub async fn execute_run(request: RunRequest) -> Result<RunOutcome> {
 
     emit(
         &progress,
-        RunProgress::Finished {
-            status: report.status,
-        },
+        RunProgress::with_detail(&run_id, RunPhase::Finished, report.status.as_str()),
     );
     Ok(RunOutcome { report, artifacts })
 }
@@ -342,9 +363,7 @@ mod tests {
 
     #[test]
     fn progress_events_are_serializable() {
-        let event = RunProgress::BackupSelected {
-            backup_id: "db.dump".to_string(),
-        };
+        let event = RunProgress::with_detail("run-1", RunPhase::BackupSelected, "db.dump");
         let json = serde_json::to_string(&event).expect("serializar evento");
         assert!(json.contains("backup_selected"));
         assert!(json.contains("db.dump"));
