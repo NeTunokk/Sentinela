@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sentinela</title>
+  <meta name="theme-color" content="#18120A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,6 +20,9 @@
       <a class="nv" data-nav="ambientes" href="#/ambientes">Ambientes</a>
       <a class="nv" data-nav="limpeza" href="#/limpeza">Limpeza</a>
       <div class="side-end">
+        <button type="button" class="install" data-action="install" hidden>
+          Instalar aplicativo
+        </button>
         <button type="button" class="shutdown" data-action="shutdown" title="Encerra o servidor local e fecha o painel">
           <span class="shutdown-icon" aria-hidden="true">⏻</span>
           Encerrar servidor
@@ -40,6 +47,11 @@
   <div id="modal-root"></div>
 
   <script>window.__SENTINELA_TOKEN__ = "__SENTINELA_TOKEN_VALUE__";</script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -23,6 +23,15 @@ Você NÃO precisa instalar Rust, compilar nada, nem baixar imagens do Docker.
    Se você abrir de novo, o programa apenas traz a página que já está no ar
    para a frente — ele não inicia um segundo servidor.
 
+   Opcional: instale o painel como aplicativo (PWA). Com ele aberto no
+   Chrome/Edge, clique em "Instalar aplicativo" no canto esquerdo do painel
+   (ou use o menu do navegador). Depois disso, ao iniciar o servidor, ele abre
+   o aplicativo instalado automaticamente; se o app ainda não estiver
+   instalado, abre em uma janela de aplicativo do Chrome/Edge e, sem Chromium,
+   no navegador padrão. O parâmetro "--browser" força o navegador e
+   "--no-open" não abre nada. Instale o app na mesma porta do servidor
+   (padrão 8787).
+
 3. Em "Ambientes", crie um ambiente apontando para:
 
    - a pasta onde estão os arquivos .dump

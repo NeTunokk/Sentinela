@@ -1133,6 +1133,44 @@ if (shutdownButton) {
   shutdownButton.addEventListener('click', shutdownServer);
 }
 
+/* Instalar como aplicativo (PWA): o navegador exige um clique do usuário. */
+let installPrompt = null;
+
+const installButton = document.querySelector('[data-action="install"]');
+
+function hideInstallButton() {
+  if (installButton) installButton.hidden = true;
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  if (installButton) installButton.hidden = false;
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  hideInstallButton();
+  toast('Sentinela instalado como aplicativo.', 'ok');
+});
+
+if (installButton) {
+  installButton.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    installPrompt = null;
+    if (choice.outcome === 'accepted') {
+      hideInstallButton();
+      toast('Instalando o Sentinela como aplicativo…', 'ok');
+    }
+  });
+}
+
+if (window.matchMedia('(display-mode: standalone)').matches) {
+  hideInstallButton();
+}
+
 view.addEventListener('click', event => {
   const trigger = event.target.closest('[data-action]');
   if (!trigger || !view.contains(trigger)) return;

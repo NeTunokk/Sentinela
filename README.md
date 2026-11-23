@@ -114,8 +114,21 @@ cargo build --release
 # o navegador abre sozinho em http://127.0.0.1:8787/
 ```
 
-- **Duplo clique e usa:** ao iniciar, o servidor abre o painel no navegador
-  padrão. `--no-open` desativa esse comportamento.
+- **Duplo clique e usa:** ao iniciar, o servidor abre o painel sozinho — no app
+  instalado, numa janela de aplicativo ou no navegador padrão. `--no-open`
+  desativa esse comportamento.
+- **Aplicativo instalado (PWA):** o painel é instalável no Edge/Chrome. Se você
+  instalar o Sentinela como aplicativo, o servidor abre direto nele na próxima
+  inicialização. Sem PWA instalado, o servidor abre o painel em uma janela de
+  aplicativo do Chrome/Edge (`--app`), sem abas e sem barra de endereço; se não
+  houver Chromium, abre no navegador padrão. Use `--browser` para forçar o
+  navegador. Se o app ainda não estiver instalado, o painel mostra o botão
+  **Instalar aplicativo** (o navegador exige esse clique; não há instalação
+  silenciosa). Instale o app na mesma porta em que o servidor vai rodar
+  (padrão 8787).
+- **WSL:** rodando dentro do WSL, o servidor detecta o PWA instalado no Windows
+  (via `/mnt/c`) e usa o Chrome/Edge do Windows para a janela de aplicativo.
+  Sem navegador do Windows, cai no `xdg-open` do Linux.
 - **Instância única:** se já houver um painel na porta, o programa não inicia um
   segundo servidor — apenas abre a página que já está no ar.
 - **Encerrar:** o botão no canto inferior esquerdo do painel chama
