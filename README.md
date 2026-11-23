@@ -76,6 +76,24 @@ painel web estão embutidos no binário e a imagem do banco acompanha o pacote.
 - Compilador C: `build-essential` no Linux, MSVC no Windows (o SQLite é
   compilado junto com o projeto)
 
+**Para compilar o aplicativo desktop (Tauri 2) no Linux:**
+
+```bash
+# Arch
+sudo pacman -S --needed base-devel webkit2gtk-4.1 libayatana-appindicator \
+  librsvg curl wget file
+
+# Debian/Ubuntu
+sudo apt-get install -y build-essential pkg-config libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev curl wget file
+```
+
+Também é necessário instalar a CLI do Tauri 2 uma vez:
+
+```bash
+cargo install tauri-cli --version '^2' --locked
+```
+
 ## Build
 
 ```bash
@@ -185,6 +203,49 @@ cargo build --release
 
 Requisitos adicionais: os mesmos da CLI — Docker para usar e Rust apenas para
 compilar. A imagem do PostgreSQL 16 acompanha o pacote.
+
+## Aplicativo desktop (Tauri 2)
+
+O crate `sentinela-gui` é o mesmo painel, agora como aplicativo nativo. O
+frontend HTML/CSS/JS de `crates/sentinela-server/web/` foi reaproveitado sem
+mudanças de visual, textos ou layout: `api()` e `apiText()` continuam com as
+mesmas assinaturas e passaram a chamar comandos Tauri (`invoke`).
+
+```bash
+# desenvolvimento (abre a janela com recarga do frontend)
+cd crates/sentinela-gui
+cargo tauri dev
+
+# build de release
+cargo tauri build
+```
+
+A lógica de telas, DTOs, verificação de relatório e controle de execuções mora
+em `sentinela-ui`, usada tanto pelo app desktop quanto pelo painel web legado.
+A camada Tauri em `crates/sentinela-gui/src/main.rs` apenas expõe comandos
+finos; a lógica pura fica na `lib` do crate, testável sem WebKit.
+
+Diferenças em relação ao painel web:
+
+- **Não há servidor loopback, token, porta nem abertura de navegador.** Isso
+  evita um processo extra, superfície de ataque (CSRF/porta local) e a
+  dependência de um navegador externo. Os comandos Tauri já são o canal IPC
+  nativo entre a interface e o Rust.
+- O botão "Sair" fecha o aplicativo. O painel legado continua disponível com
+  `sentinela-server` para quem preferir o navegador.
+- O progresso da prova chega por eventos Tauri (`run-progress`), com as fases
+  `descobrindo backup`, `sandbox`, `restore`, `testes` e `relatório`. O botão
+  **Cancelar** aciona o token de cancelamento; a orquestração remove o container,
+  a rede e os órfãos antes de encerrar.
+- O relatório só é entregue depois de recalcular o SHA-256 e validar a assinatura
+  Ed25519. A tela mostra **Verificado** ou **Adulterado** de forma explícita, e
+  os botões JSON/HTML ficam desabilitados quando a verificação falha. O HTML
+  exibido é gerado a partir do JSON verificado, nunca de um arquivo possivelmente
+  adulterado no disco.
+- CSP restritiva, assets apenas locais (sem CDN/fonte/script externo), nenhuma
+  chamada de rede, nenhuma telemetria e capabilities mínimas
+  (`core:event:allow-listen`). Nenhuma linha de dados do cliente aparece em
+  eventos, logs ou mensagens de erro da interface.
 
 ## Início rápido
 
@@ -548,11 +609,13 @@ sentinela report show <run_id>
 
 ```
 crates/
-  sentinela-core/     configuração, modelos, expectativas, erros, hash e paths
+  sentinela-core/     configuração, modelos, hash, relatórios, assinatura e paths
   sentinela-backup/   descoberta/validação de backups (logical + stub pgBackRest)
   sentinela-runner/   Docker, sandbox, restore e testes SQL
   sentinela-store/    histórico SQLite (runs, testes, relatórios)
-  sentinela-cli/      comandos, relatórios JSON/HTML e assinatura Ed25519
-  sentinela-server/   painel web local (axum) e assets embutidos do painel
+  sentinela-cli/      comandos da linha de execução (orquestração no runner)
+  sentinela-server/   painel web local (axum, legado) e assets embutidos
+  sentinela-ui/       DTOs, verificação e lógica compartilhada das duas interfaces
+  sentinela-gui/      aplicativo desktop Tauri 2 (frontend embutido)
 examples/             config, ambiente e testes de exemplo
 ```

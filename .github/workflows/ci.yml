@@ -25,3 +25,31 @@ jobs:
 
       - name: Testes
         run: cargo test --workspace
+
+  gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Dependências nativas do Tauri (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev curl wget file
+
+      - name: Clippy com o feature desktop
+        run: cargo clippy -p sentinela-gui --features desktop --all-targets -- -D warnings
+
+      - name: Instalar Tauri CLI
+        run: cargo install tauri-cli --version '^2' --locked
+
+      - name: Build do aplicativo (sem bundle)
+        working-directory: crates/sentinela-gui
+        run: cargo tauri build --no-bundle
