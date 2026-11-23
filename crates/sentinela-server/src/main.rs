@@ -2,7 +2,6 @@ mod api;
 mod pwa;
 mod web;
 
-use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,33 +14,18 @@ use rand::Rng;
 use sentinela_core::paths::Paths;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
 
 /// Estado compartilhado por todas as rotas do painel.
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub paths: Paths,
+    /// Lógica da interface, compartilhada com o app desktop.
+    pub ui: sentinela_ui::UiState,
     pub token: Arc<String>,
-    pub active_runs: Arc<Mutex<HashMap<String, ActiveRun>>>,
     /// Acionado pelo botão "Encerrar servidor" do painel.
     pub shutdown: Arc<Notify>,
-}
-
-/// Execução iniciada pelo painel e ainda não concluída (ou que falhou antes de
-/// gerar um registro no histórico).
-#[derive(Clone, Debug)]
-pub(crate) struct ActiveRun {
-    pub environment: String,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-    pub state: ActiveRunState,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum ActiveRunState {
-    Running,
-    Failed(String),
 }
 
 /// Opções lidas da linha de comando.
@@ -74,9 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = new_token();
     let shutdown = Arc::new(Notify::new());
     let state = AppState {
-        paths,
+        ui: sentinela_ui::UiState::new(paths),
         token: Arc::new(token),
-        active_runs: Arc::new(Mutex::new(HashMap::new())),
         shutdown: shutdown.clone(),
     };
 
@@ -92,6 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/environments/{name}/backups", get(api::list_backups))
         .route("/api/runs", get(api::list_runs).post(api::start_run))
         .route("/api/runs/{id}", get(api::get_run))
+        .route("/api/runs/{id}/cancel", post(api::cancel_run))
         .route("/api/runs/{id}/report.json", get(api::report_json))
         .route("/api/runs/{id}/report.html", get(api::report_html))
         .route("/api/resources", get(api::list_resources))

@@ -1498,6 +1498,7 @@ dependencies = [
  "sentinela-core",
  "sentinela-runner",
  "sentinela-store",
+ "sentinela-ui",
  "serde",
  "serde_json",
  "tempfile",
@@ -1516,6 +1517,23 @@ dependencies = [
  "sentinela-core",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "sentinela-ui"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sentinela-backup",
+ "sentinela-core",
+ "sentinela-runner",
+ "sentinela-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

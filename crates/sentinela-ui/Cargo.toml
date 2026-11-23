@@ -1,0 +1,22 @@
+[package]
+name = "sentinela-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Lógica compartilhada do painel Sentinela (CLI legado e app desktop)"
+
+[dependencies]
+sentinela-backup = { path = "../sentinela-backup" }
+sentinela-core = { path = "../sentinela-core" }
+sentinela-runner = { path = "../sentinela-runner" }
+sentinela-store = { path = "../sentinela-store" }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
