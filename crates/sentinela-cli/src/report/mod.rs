@@ -5,8 +5,10 @@ pub mod sign;
 use sentinela_core::hash::{sha256_digest, sha256_hex};
 use sentinela_core::model::Report;
 use sentinela_core::paths::{create_private_dir, write_private_file, Paths};
-use sentinela_core::{Result, SentinelaError};
+use sentinela_core::Result;
 use sentinela_store::ReportArtifacts;
+
+pub use sentinela_core::report::verify_report_bytes;
 
 use crate::report::sign::ReportSigner;
 
@@ -45,26 +47,6 @@ pub fn write_reports(
         signature,
         public_key,
     })
-}
-
-/// Recalcula o hash, confere o hash esperado (se houver) e valida a assinatura.
-pub fn verify_report_bytes(
-    json_bytes: &[u8],
-    expected_sha256: Option<&str>,
-    signature: &str,
-    public_key: &str,
-) -> Result<String> {
-    let digest = sha256_digest(json_bytes);
-    let sha256 = sha256_hex(json_bytes);
-    if let Some(expected) = expected_sha256 {
-        if !expected.eq_ignore_ascii_case(&sha256) {
-            return Err(SentinelaError::Report(format!(
-                "SHA-256 do relatório não confere: esperado {expected}, calculado {sha256}"
-            )));
-        }
-    }
-    sign::verify_digest(&digest, signature, public_key)?;
-    Ok(sha256)
 }
 
 #[cfg(test)]

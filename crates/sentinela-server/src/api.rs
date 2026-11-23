@@ -14,10 +14,10 @@ use uuid::Uuid;
 use sentinela_backup::provider_for;
 use sentinela_cli::cli::RunArgs;
 use sentinela_cli::commands::run::execute_with_run_id;
-use sentinela_cli::report::verify_report_bytes;
 use sentinela_core::config::EnvironmentConfig;
 use sentinela_core::model::Report;
 use sentinela_core::paths::{validate_env_name, Paths};
+use sentinela_core::report::{self as report_core, StoredReportRef, VerifiedReport};
 use sentinela_core::SentinelaError;
 use sentinela_runner::{cleanup_orphans, list_orphans};
 use sentinela_store::{RunDetail, RunRow, Store, TestResultRow};
@@ -52,10 +52,6 @@ impl ApiError {
 
     fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
-    }
-
-    fn unprocessable_entity(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, message)
     }
 
     fn internal(message: impl Into<String>) -> Self {
@@ -328,7 +324,7 @@ pub(crate) async fn get_run(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    validate_run_id(&id)?;
+    report_core::validate_run_id(&id)?;
 
     let detail = {
         let store = Store::open(&state.paths.database_path())?;
@@ -503,15 +499,14 @@ pub(crate) async fn report_json(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
-    validate_run_id(&id)?;
+    report_core::validate_run_id(&id)?;
     let detail = {
         let store = Store::open(&state.paths.database_path())?;
         store.get_run(&id)?
     }
     .ok_or_else(|| ApiError::not_found(format!("execução '{}' não encontrada", id)))?;
 
-    let verified =
-        verify_stored_report(&state.paths, &id, &detail).map_err(ApiError::unprocessable_entity)?;
+    let verified = verify_stored_report(&state.paths, &id, &detail)?;
 
     let mut response = verified.bytes.into_response();
     response.headers_mut().insert(
@@ -528,14 +523,14 @@ pub(crate) async fn report_html(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
-    validate_run_id(&id)?;
+    report_core::validate_run_id(&id)?;
     let detail = {
         let store = Store::open(&state.paths.database_path())?;
         store.get_run(&id)?
     }
     .ok_or_else(|| ApiError::not_found(format!("execução '{}' não encontrada", id)))?;
 
-    verify_stored_report(&state.paths, &id, &detail).map_err(ApiError::unprocessable_entity)?;
+    verify_stored_report(&state.paths, &id, &detail)?;
 
     let html_path = detail.report.as_ref().map_or_else(
         || state.paths.reports_dir().join(format!("{id}.html")),
@@ -694,61 +689,28 @@ struct SummaryDto {
     errors: usize,
 }
 
-struct VerifiedReport {
-    bytes: Vec<u8>,
-    sha256: String,
-    signature: String,
-    public_key: String,
+fn stored_report_ref(report: &sentinela_store::ReportRow) -> StoredReportRef {
+    StoredReportRef::new(
+        &report.json_path,
+        &report.sha256,
+        &report.signature,
+        &report.public_key,
+    )
 }
 
 fn verify_stored_report(
     paths: &Paths,
     run_id: &str,
     detail: &RunDetail,
-) -> Result<VerifiedReport, String> {
-    let stored = detail.report.as_ref();
-    let json_path = stored.map_or_else(
-        || paths.reports_dir().join(format!("{run_id}.json")),
-        |report| PathBuf::from(&report.json_path),
-    );
-
-    let expected_sha256 = read_sidecar(&json_path.with_extension("sha256"))
-        .or_else(|| stored.map(|report| report.sha256.clone()));
-    let signature = read_sidecar(&json_path.with_extension("sig"))
-        .or_else(|| stored.map(|report| report.signature.clone()))
-        .ok_or_else(|| {
-            format!(
-                "assinatura ausente para {} (esperado o sidecar .sig)",
-                json_path.display()
-            )
-        })?;
-    let public_key = read_sidecar(&json_path.with_extension("pub"))
-        .or_else(|| stored.map(|report| report.public_key.clone()))
-        .ok_or_else(|| {
-            format!(
-                "chave pública ausente para {} (esperado o sidecar .pub)",
-                json_path.display()
-            )
-        })?;
-
-    let bytes = fs::read(&json_path).map_err(|error| {
-        format!(
-            "não foi possível ler o relatório {}: {error}",
-            json_path.display()
-        )
-    })?;
-    let sha256 = verify_report_bytes(&bytes, expected_sha256.as_deref(), &signature, &public_key)
-        .map_err(|error| error.to_string())?;
-
-    Ok(VerifiedReport {
-        bytes,
-        sha256,
-        signature,
-        public_key,
-    })
+) -> Result<VerifiedReport, SentinelaError> {
+    let stored = detail.report.as_ref().map(stored_report_ref);
+    report_core::verify_stored_report(paths, run_id, stored.as_ref())
 }
 
-fn report_dto(detail: &RunDetail, verification: &Result<VerifiedReport, String>) -> ReportDto {
+fn report_dto(
+    detail: &RunDetail,
+    verification: &Result<VerifiedReport, SentinelaError>,
+) -> ReportDto {
     let stored = detail.report.as_ref();
     match verification {
         Ok(verified) => ReportDto {
@@ -761,34 +723,12 @@ fn report_dto(detail: &RunDetail, verification: &Result<VerifiedReport, String>)
         },
         Err(error) => ReportDto {
             verified: false,
-            verification_error: Some(error.clone()),
+            verification_error: Some(error.to_string()),
             sha256: stored.map(|report| report.sha256.clone()),
             signature: stored.map(|report| report.signature.clone()),
             public_key: stored.map(|report| report.public_key.clone()),
             signed_at: stored.map(|report| report.signed_at.clone()),
         },
-    }
-}
-
-fn read_sidecar(path: &std::path::Path) -> Option<String> {
-    fs::read_to_string(path)
-        .ok()
-        .map(|contents| contents.trim().to_string())
-        .filter(|contents| !contents.is_empty())
-}
-
-fn validate_run_id(run_id: &str) -> Result<(), ApiError> {
-    let valid = !run_id.is_empty()
-        && run_id.len() <= 64
-        && run_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-');
-    if valid {
-        Ok(())
-    } else {
-        Err(ApiError::bad_request(format!(
-            "run_id inválido: {run_id:?}"
-        )))
     }
 }
 

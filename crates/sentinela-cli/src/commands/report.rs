@@ -1,10 +1,10 @@
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use sentinela_core::paths::Paths;
-use sentinela_core::{Result as CoreResult, SentinelaError};
-use sentinela_store::{ReportRow, RunDetail, Store};
+use sentinela_core::report::{self as report_core, StoredReportRef};
+use sentinela_core::SentinelaError;
+use sentinela_store::{RunDetail, Store};
 
 use crate::cli::ReportCommand;
 use crate::report::verify_report_bytes;
@@ -16,26 +16,43 @@ pub fn execute(command: ReportCommand, paths: &Paths) -> Result<i32> {
 }
 
 fn show(run_id: &str, raw_json: bool, paths: &Paths) -> Result<i32> {
-    validate_run_id(run_id)?;
+    report_core::validate_run_id(run_id)?;
 
     let store = Store::open(&paths.database_path())?;
     let detail = store.get_run(run_id)?;
+    let stored = detail
+        .as_ref()
+        .and_then(|detail| detail.report.as_ref())
+        .map(|report| {
+            StoredReportRef::new(
+                &report.json_path,
+                &report.sha256,
+                &report.signature,
+                &report.public_key,
+            )
+        });
 
-    let (json_path, expected_sha256, signature, public_key) =
-        locate_artifacts(paths, run_id, detail.as_ref())?;
+    let location = report_core::locate_artifacts(paths, run_id, stored.as_ref())?;
+    if !location.json_path.exists() {
+        return Err(SentinelaError::Report(format!(
+            "relatório não encontrado: {}",
+            location.json_path.display()
+        ))
+        .into());
+    }
 
-    let json_bytes = fs::read(&json_path).map_err(|error| {
+    let json_bytes = fs::read(&location.json_path).map_err(|error| {
         SentinelaError::Report(format!(
             "não foi possível ler o relatório {}: {error}",
-            json_path.display()
+            location.json_path.display()
         ))
     })?;
 
     let sha256 = verify_report_bytes(
         &json_bytes,
-        expected_sha256.as_deref(),
-        &signature,
-        &public_key,
+        location.expected_sha256.as_deref(),
+        &location.signature,
+        &location.public_key,
     )?;
 
     if raw_json {
@@ -46,16 +63,16 @@ fn show(run_id: &str, raw_json: bool, paths: &Paths) -> Result<i32> {
         return Ok(0);
     }
 
-    println!("Relatório verificado: {}", json_path.display());
+    println!("Relatório verificado: {}", location.json_path.display());
     println!("  SHA-256:    {sha256}");
     println!("  assinatura: ok (Ed25519)");
-    println!("  chave:      {public_key}");
+    println!("  chave:      {}", location.public_key);
 
     if let Some(detail) = detail {
         print_run(&detail);
     }
 
-    let html_path = json_path.with_extension("html");
+    let html_path = location.html_path();
     if html_path.exists() {
         println!("  HTML:       {}", html_path.display());
     }
@@ -107,71 +124,5 @@ fn print_run(detail: &RunDetail) {
                 println!("    {}", message);
             }
         }
-    }
-}
-
-type ArtifactLocation = (PathBuf, Option<String>, String, String);
-
-fn locate_artifacts(
-    paths: &Paths,
-    run_id: &str,
-    detail: Option<&RunDetail>,
-) -> CoreResult<ArtifactLocation> {
-    let json_path = detail
-        .and_then(|detail| detail.report.as_ref())
-        .map_or_else(
-            || paths.reports_dir().join(format!("{run_id}.json")),
-            |report| PathBuf::from(&report.json_path),
-        );
-
-    if !json_path.exists() {
-        return Err(SentinelaError::Report(format!(
-            "relatório não encontrado: {}",
-            json_path.display()
-        )));
-    }
-
-    let stored = detail.and_then(|detail| detail.report.as_ref());
-    let expected_sha256 = read_sidecar(&json_path.with_extension("sha256"))
-        .or_else(|| stored.map(|report| report.sha256.clone()));
-    let signature = read_sidecar(&json_path.with_extension("sig"))
-        .or_else(|| stored.map(|report| report.signature.clone()))
-        .ok_or_else(|| {
-            SentinelaError::Report(format!(
-                "assinatura ausente para {} (esperado o sidecar .sig)",
-                json_path.display()
-            ))
-        })?;
-    let public_key = read_sidecar(&json_path.with_extension("pub"))
-        .or_else(|| stored.map(|report: &ReportRow| report.public_key.clone()))
-        .ok_or_else(|| {
-            SentinelaError::Report(format!(
-                "chave pública ausente para {} (esperado o sidecar .pub)",
-                json_path.display()
-            ))
-        })?;
-
-    Ok((json_path, expected_sha256, signature, public_key))
-}
-
-fn read_sidecar(path: &Path) -> Option<String> {
-    fs::read_to_string(path)
-        .ok()
-        .map(|contents| contents.trim().to_string())
-        .filter(|contents| !contents.is_empty())
-}
-
-fn validate_run_id(run_id: &str) -> CoreResult<()> {
-    let valid = !run_id.is_empty()
-        && run_id.len() <= 64
-        && run_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-');
-    if valid {
-        Ok(())
-    } else {
-        Err(SentinelaError::Config(format!(
-            "run_id inválido: {run_id:?}"
-        )))
     }
 }

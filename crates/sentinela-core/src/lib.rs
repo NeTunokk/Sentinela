@@ -9,5 +9,6 @@ pub mod expectation;
 pub mod hash;
 pub mod model;
 pub mod paths;
+pub mod report;
 
 pub use error::{Result, SentinelaError};
