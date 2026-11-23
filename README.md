@@ -497,7 +497,8 @@ mkdir -p /tmp/sentinela-demo/backups /tmp/sentinela-demo/tests
 # 4. Um dump de exemplo (a partir de um PostgreSQL de origem)
 docker run -d --rm --name sentinela-demo-source \
   -e POSTGRES_PASSWORD=demo -e POSTGRES_DB=sentinela postgres:16
-until docker exec sentinela-demo-source pg_isready -U postgres -d sentinela; do sleep 1; done
+until docker exec sentinela-demo-source pg_isready -h 127.0.0.1 -U postgres -d sentinela; do sleep 1; done
+sleep 1
 docker exec sentinela-demo-source psql -U postgres -d sentinela \
   -c "CREATE TABLE users (id serial PRIMARY KEY, email text NOT NULL UNIQUE);" \
   -c "INSERT INTO users (email) VALUES ('alice@example.com'), ('bob@example.com');"
