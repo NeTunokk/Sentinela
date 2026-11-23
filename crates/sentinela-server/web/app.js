@@ -32,6 +32,7 @@ const state = {
   resources: [],
   resourcesError: null,
   pending: [],
+  progress: {},
   newEnv: false
 };
 
@@ -101,6 +102,21 @@ function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('pt-BR');
+}
+
+const PHASES = {
+  discovery: 'Descobrindo backup',
+  backup_selected: 'Backup selecionado',
+  startup: 'Iniciando sandbox',
+  restore: 'Restaurando',
+  tests: 'Executando testes',
+  report: 'Gerando relatório',
+  finished: 'Concluído',
+  failed: 'Falhou'
+};
+
+function phaseLabel(phase) {
+  return PHASES[phase] || 'Em execução';
 }
 
 function runTestSummary(run) {
@@ -254,8 +270,11 @@ function execucoesView() {
   const rows = runs.length
     ? runs.map(run => {
       const pendingRun = run.status === 'running';
+      const phase = state.progress[run.id]
+        ? `<span class="pending">${esc(phaseLabel(state.progress[run.id]))}</span><br>`
+        : '';
       const report = pendingRun
-        ? '<span class="pending">Gerando…</span>'
+        ? `${phase}<button type="button" class="link" data-action="cancel-run" data-id="${esc(run.id)}">Cancelar</button>`
         : `<a class="l" href="#/relatorio/${esc(run.id)}">Ver relatório</a>`;
       return `<tr>
         <td><span class="m" title="${esc(run.id)}">${esc(shortId(run.id))}</span></td>
@@ -396,7 +415,7 @@ function relatorioView(detail, id) {
 
   const title = restoreFailed
     ? 'Restauração falhou'
-    : (!report ? 'Relatório indisponível' : (report.verified ? 'Integridade verificada' : 'Falha na verificação'));
+    : (!report ? 'Relatório indisponível' : (report.verified ? 'Verificado' : 'Adulterado'));
 
   const errorNote = run.error_message
     ? `<section class="card warn"><h2>Erro registrado</h2><p class="note">${esc(run.error_message)}</p></section>`
@@ -426,7 +445,7 @@ function relatorioView(detail, id) {
         </div>
         <div>
           <div class="lb">Assinatura Ed25519</div>
-          <div class="sig">${report ? (report.verified ? 'Válida' : 'Inválida') : '—'}</div>
+          <div class="sig">${report ? (report.verified ? 'Verificado' : 'Adulterado') : '—'}</div>
         </div>
         <div>
           <div class="lb">Backup</div>
@@ -790,6 +809,7 @@ function pollRun(id) {
 
       if (!detail.pending && detail.run.status !== 'running') {
         state.pending = state.pending.filter(item => item.id !== id);
+        delete state.progress[id];
         stopPolling();
         const status = STATUS[detail.run.status] || { label: detail.run.status };
         toast(
@@ -820,6 +840,22 @@ function pollRun(id) {
   };
 
   pollTimer = window.setTimeout(tick, 1200);
+}
+
+async function cancelRun(id) {
+  try {
+    await api(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+    state.pending = state.pending.filter(item => item.id !== id);
+    delete state.progress[id];
+    if (state.runDetail && state.runDetail.run && state.runDetail.run.id === id) {
+      state.runDetail = null;
+    }
+    stopPolling();
+    toast(`Execução ${shortId(id)} cancelada; recursos Docker removidos.`, 'ok');
+    await refreshRoute();
+  } catch (error) {
+    toast(`Não foi possível cancelar: ${error.message}`, 'err');
+  }
 }
 
 function stopPolling() {
@@ -1181,6 +1217,9 @@ view.addEventListener('click', event => {
       break;
     case 'test-backup':
       startRun(trigger.dataset.backup);
+      break;
+    case 'cancel-run':
+      cancelRun(trigger.dataset.id);
       break;
     case 'new-env':
       state.newEnv = true;

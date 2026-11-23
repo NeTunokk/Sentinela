@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinela</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <nav class="side" aria-label="Navegação principal">
+      <a class="brand" href="#/execucoes" aria-label="Sentinela — Execuções">
+        <img src="assets/sentinela-logo.png" alt="Sentinela">
+      </a>
+      <a class="nv" data-nav="execucoes" href="#/execucoes">Execuções</a>
+      <a class="nv" data-nav="ambientes" href="#/ambientes">Ambientes</a>
+      <a class="nv" data-nav="limpeza" href="#/limpeza">Limpeza</a>
+      <div class="side-end">
+        <button type="button" class="shutdown" data-action="shutdown" title="Fecha o aplicativo">
+          <span class="shutdown-icon" aria-hidden="true">⏻</span>
+          Sair
+        </button>
+        <p class="side-foot">v0.1 · aplicativo desktop · nenhum dado sai desta máquina</p>
+      </div>
+    </nav>
+    <main id="view" class="main"></main>
+  </div>
+
+  <div id="shutdown-screen" class="shutdown-screen" hidden>
+    <div class="shutdown-box" role="alertdialog" aria-modal="true" aria-labelledby="shutdown-title">
+      <span class="shutdown-mark" aria-hidden="true">⏻</span>
+      <h2 id="shutdown-title">Aplicativo encerrado</h2>
+      <p>O Sentinela foi fechado com segurança. Nenhum dado saiu desta máquina.</p>
+      <p id="shutdown-hint" class="shutdown-hint">Fechando esta janela…</p>
+      <button type="button" id="shutdown-close" class="btn">Fechar esta janela</button>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

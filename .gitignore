@@ -19,3 +19,7 @@
 /postgres16.tar.gz
 /postgres16.tar.sha256
 /postgres16.tar.gz.sha256
+
+# Arquivos gerados pelo Tauri
+target/gen/schemas/
+crates/sentinela-gui/gen/

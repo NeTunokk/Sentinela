@@ -1,0 +1,35 @@
+[package]
+name = "sentinela-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Aplicativo desktop Tauri do Sentinela"
+build = "build.rs"
+
+[lib]
+name = "sentinela_gui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sentinela-gui"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = []
+desktop = ["dep:tauri", "dep:tauri-build"]
+
+[dependencies]
+sentinela-core = { path = "../sentinela-core" }
+sentinela-runner = { path = "../sentinela-runner" }
+sentinela-ui = { path = "../sentinela-ui" }
+serde_json.workspace = true
+tauri = { workspace = true, optional = true }
+tokio.workspace = true
+
+[build-dependencies]
+tauri-build = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
