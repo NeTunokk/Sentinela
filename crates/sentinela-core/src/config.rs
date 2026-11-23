@@ -197,6 +197,19 @@ impl EnvironmentConfig {
     /// diretório do arquivo de ambiente.
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                let name = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("<nome>");
+                return SentinelaError::Config(format!(
+                    "ambiente '{name}' não configurado em {}; execute `sentinela env add {name} \
+                     --backup-dir <dir>` ou ajuste SENTINELA_CONFIG_DIR. Se `sentinela` não for \
+                     encontrado, instale com `cargo install --path crates/sentinela-cli` e coloque \
+                     ~/.cargo/bin no PATH",
+                    path.display()
+                ));
+            }
             SentinelaError::Config(format!(
                 "não foi possível ler o ambiente {}: {error}",
                 path.display()
@@ -503,6 +516,21 @@ tests:
         assert_eq!(config.postgres.docker_image(), "postgres:16");
         assert_eq!(config.tests.statement_timeout_ms, 2500);
         assert_eq!(config.docker.memory_mb, 512);
+    }
+
+    #[test]
+    fn missing_environment_suggests_setup() {
+        let path = Path::new("/tmp/sentinela-inexistente/envs/producao.yaml");
+
+        let error = EnvironmentConfig::load(path).expect_err("ambiente não deveria existir");
+        let message = error.to_string();
+
+        assert!(message.contains("sentinela env add producao"), "{message}");
+        assert!(message.contains("SENTINELA_CONFIG_DIR"), "{message}");
+        assert!(
+            message.contains("cargo install --path crates/sentinela-cli"),
+            "{message}"
+        );
     }
 
     #[test]

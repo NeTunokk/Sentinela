@@ -24,7 +24,8 @@ impl Paths {
     pub fn discover() -> Result<Self> {
         let home = home_dir().ok_or_else(|| {
             SentinelaError::Config(
-                "nem HOME nem USERPROFILE estão definidos; não é possível localizar os diretórios do Sentinela"
+                "nem HOME nem USERPROFILE estão definidos; defina um deles ou configure \
+                 SENTINELA_CONFIG_DIR e SENTINELA_DATA_DIR explicitamente"
                     .into(),
             )
         })?;
