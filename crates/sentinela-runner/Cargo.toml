@@ -8,6 +8,8 @@ description = "Sandbox Docker, restauração e testes SQL do Sentinela"
 
 [dependencies]
 sentinela-core = { path = "../sentinela-core" }
+sentinela-backup = { path = "../sentinela-backup" }
+sentinela-store = { path = "../sentinela-store" }
 base64.workspace = true
 bollard.workspace = true
 chrono.workspace = true

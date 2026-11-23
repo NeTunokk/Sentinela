@@ -1,53 +1,14 @@
-pub mod html;
-pub mod json;
+//! Compatibilidade: geração e verificação de relatórios vivem no core.
+//!
+//! A CLI continua reexportizando os símbolos para não quebrar consumidores
+//! externos, mas não há mais nenhuma implementação duplicada aqui.
+
 pub mod sign;
 
-use sentinela_core::hash::{sha256_digest, sha256_hex};
-use sentinela_core::model::Report;
-use sentinela_core::paths::{create_private_dir, write_private_file, Paths};
-use sentinela_core::Result;
-use sentinela_store::ReportArtifacts;
-
-pub use sentinela_core::report::verify_report_bytes;
-
-use crate::report::sign::ReportSigner;
-
-/// Gera JSON, HTML, hash e assinatura, e grava todos os artefatos em disco.
-pub fn write_reports(
-    paths: &Paths,
-    report: &Report,
-    signer: &ReportSigner,
-) -> Result<ReportArtifacts> {
-    create_private_dir(&paths.reports_dir())?;
-
-    let json_bytes = json::serialize(report)?;
-    let digest = sha256_digest(&json_bytes);
-    let sha256 = sha256_hex(&json_bytes);
-    let signature = signer.sign_digest(&digest);
-    let public_key = signer.public_key_base64().to_string();
-    let html = html::render(report, &sha256, &signature, &public_key)?;
-
-    let base = paths.reports_dir().join(&report.run_id);
-    let json_path = base.with_extension("json");
-    let html_path = base.with_extension("html");
-    let sha_path = base.with_extension("sha256");
-    let signature_path = base.with_extension("sig");
-    let public_path = base.with_extension("pub");
-
-    write_private_file(&json_path, &json_bytes)?;
-    write_private_file(&html_path, html.as_bytes())?;
-    write_private_file(&sha_path, format!("{sha256}\n").as_bytes())?;
-    write_private_file(&signature_path, format!("{signature}\n").as_bytes())?;
-    write_private_file(&public_path, format!("{public_key}\n").as_bytes())?;
-
-    Ok(ReportArtifacts {
-        json_path,
-        html_path,
-        sha256,
-        signature,
-        public_key,
-    })
-}
+pub use sentinela_core::paths::Paths;
+pub use sentinela_core::report::{
+    html, json, verify_report_bytes, write_reports, ReportArtifacts, ReportSigner,
+};
 
 #[cfg(test)]
 mod tests {

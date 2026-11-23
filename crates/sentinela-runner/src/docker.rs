@@ -179,6 +179,12 @@ impl DockerSession {
         &self.network_name
     }
 
+    /// Marca a sessão como limpa quando `cleanup_orphans()` removeu os recursos.
+    pub fn mark_cleaned(&mut self) {
+        self.container_attempted = false;
+        self.network_attempted = false;
+    }
+
     /// Sobe rede, container e aguarda readiness.
     pub async fn prepare(&mut self, spec: &SandboxSpec) -> Result<()> {
         self.ensure_image(&spec.image).await?;
@@ -419,53 +425,13 @@ impl DockerSession {
         tests: &[sentinela_core::config::TestDefinition],
         statement_timeout_ms: u64,
     ) -> Result<RunExecution> {
-        let restore = self.restore(spec).await?;
-        if !restore.list_ok || restore.exit_code != Some(0) {
-            return Ok(RunExecution {
-                error: Some(if restore.list_ok {
-                    format!("pg_restore terminou com código {:?}", restore.exit_code)
-                } else {
-                    "pg_restore --list recusou o dump".to_string()
-                }),
-                restore,
-                tests: Vec::new(),
-                status: RunStatus::RestoreFailed,
-                tests_duration_ms: 0,
-            });
-        }
-
-        let tests_started = Instant::now();
-        let outcomes = if tests.is_empty() {
-            Vec::new()
-        } else {
-            let address = self.container_address().await?;
-            run_sql_tests(spec, &address, tests, statement_timeout_ms).await?
-        };
-        let tests_duration_ms = millis(tests_started.elapsed());
-
-        let failed = outcomes.iter().filter(|outcome| !outcome.passed()).count();
-        let (status, error) = if failed == 0 {
-            (RunStatus::Ok, None)
-        } else {
-            (
-                RunStatus::TestsFailed,
-                Some(format!(
-                    "{failed} de {} testes não passaram",
-                    outcomes.len()
-                )),
-            )
-        };
-
-        Ok(RunExecution {
-            restore,
-            tests: outcomes,
-            status,
-            error,
-            tests_duration_ms,
-        })
+        let restore = self.execute_restore(spec).await?;
+        self.execute_tests(spec, restore, tests, statement_timeout_ms)
+            .await
     }
 
-    async fn restore(&self, spec: &SandboxSpec) -> Result<RestoreReport> {
+    /// Valida o dump e restaura o backup no container.
+    pub async fn execute_restore(&self, spec: &SandboxSpec) -> Result<RestoreReport> {
         let started = Instant::now();
         let list_command = [
             "pg_restore".to_string(),
@@ -543,6 +509,59 @@ impl DockerSession {
                 )),
             }),
         }
+    }
+
+    /// Executa os testes SQL após o restore e monta o resultado da execução.
+    pub async fn execute_tests(
+        &self,
+        spec: &SandboxSpec,
+        restore: RestoreReport,
+        tests: &[sentinela_core::config::TestDefinition],
+        statement_timeout_ms: u64,
+    ) -> Result<RunExecution> {
+        if !restore.list_ok || restore.exit_code != Some(0) {
+            return Ok(RunExecution {
+                error: Some(if restore.list_ok {
+                    format!("pg_restore terminou com código {:?}", restore.exit_code)
+                } else {
+                    "pg_restore --list recusou o dump".to_string()
+                }),
+                restore,
+                tests: Vec::new(),
+                status: RunStatus::RestoreFailed,
+                tests_duration_ms: 0,
+            });
+        }
+
+        let tests_started = Instant::now();
+        let outcomes = if tests.is_empty() {
+            Vec::new()
+        } else {
+            let address = self.container_address().await?;
+            run_sql_tests(spec, &address, tests, statement_timeout_ms).await?
+        };
+        let tests_duration_ms = millis(tests_started.elapsed());
+
+        let failed = outcomes.iter().filter(|outcome| !outcome.passed()).count();
+        let (status, error) = if failed == 0 {
+            (RunStatus::Ok, None)
+        } else {
+            (
+                RunStatus::TestsFailed,
+                Some(format!(
+                    "{failed} de {} testes não passaram",
+                    outcomes.len()
+                )),
+            )
+        };
+
+        Ok(RunExecution {
+            restore,
+            tests: outcomes,
+            status,
+            error,
+            tests_duration_ms,
+        })
     }
 
     async fn container_address(&self) -> Result<String> {

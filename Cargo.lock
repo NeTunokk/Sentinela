@@ -1452,6 +1452,7 @@ dependencies = [
 name = "sentinela-core"
 version = "0.1.0"
 dependencies = [
+ "askama",
  "base64",
  "chrono",
  "ed25519-dalek",
@@ -1474,7 +1475,9 @@ dependencies = [
  "chrono",
  "futures-util",
  "rand",
+ "sentinela-backup",
  "sentinela-core",
+ "sentinela-store",
  "serde",
  "serde_json",
  "tokio",

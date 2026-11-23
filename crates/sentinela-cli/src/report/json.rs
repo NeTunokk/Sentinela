@@ -1,7 +1,3 @@
-use sentinela_core::model::Report;
-use sentinela_core::Result;
+//! Compatibilidade: a serialização canônica vive em `sentinela_core::report`.
 
-/// Serialização determinística (pretty) do relatório canônico.
-pub fn serialize(report: &Report) -> Result<Vec<u8>> {
-    Ok(serde_json::to_vec_pretty(report)?)
-}
+pub use sentinela_core::report::json::serialize;

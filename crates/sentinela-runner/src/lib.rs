@@ -5,10 +5,14 @@
 //! para que os testes SQL possam ser executados pelo host com `tokio-postgres`.
 
 pub mod docker;
+pub mod execution;
 pub mod sql_tests;
 
 pub use docker::{
     cleanup_orphans, list_orphans, random_password, CleanupReport, DockerSession, OrphanResource,
     RunExecution, SandboxSpec,
+};
+pub use execution::{
+    execute_run, CancellationToken, ProgressSender, RunOutcome, RunProgress, RunRequest,
 };
 pub use sql_tests::run_sql_tests;

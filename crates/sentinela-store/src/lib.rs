@@ -3,13 +3,15 @@
 //! O banco guarda configurações de ambientes, execuções, resultados de testes
 //! (somente status/valor escalar/duração) e metadados de relatórios assinados.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use sentinela_core::model::{Report, TestOutcome};
 use sentinela_core::{Result, SentinelaError};
+
+pub use sentinela_core::report::ReportArtifacts;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS environments (
@@ -114,16 +116,6 @@ pub struct RunDetail {
     pub run: RunRow,
     pub tests: Vec<TestResultRow>,
     pub report: Option<ReportRow>,
-}
-
-/// Artefatos assinados de um relatório gravados em disco.
-#[derive(Debug, Clone)]
-pub struct ReportArtifacts {
-    pub json_path: PathBuf,
-    pub html_path: PathBuf,
-    pub sha256: String,
-    pub signature: String,
-    pub public_key: String,
 }
 
 /// Conexão SQLite local. Não é `Send`; use fora de pontos de await.
